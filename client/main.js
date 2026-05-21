@@ -72,6 +72,7 @@ function showMenu() {
     ),
     el("div", { className: "row-buttons", style: "margin-top:28px;" },
       Object.assign(el("button", { className: "secondary" }), { textContent: "战绩", onclick: () => showHistory() }),
+      Object.assign(el("button", { className: "secondary" }), { textContent: "账号设置", onclick: () => showAccount() }),
       me.is_admin
         ? Object.assign(el("button", { className: "secondary" }), { textContent: "管理后台", onclick: () => showAdmin(app, { onBack: showMenu, sessionCsrf }) })
         : null,
@@ -83,6 +84,89 @@ function showMenu() {
   );
   screen.append(card);
   app.append(screen);
+}
+
+function showAccount() {
+  document.body.classList.remove("game-mode");
+  app.innerHTML = "";
+  const screen = el("div", { className: "center-screen" });
+  const card = el("div", { className: "card" });
+  card.append(
+    el("h1", {}, "账号设置"),
+    el("p", { className: "sub" }, me.email),
+    el("label", {}, "当前密码"),
+    Object.assign(el("input"), { type: "password", id: "old", autocomplete: "current-password" }),
+    el("label", {}, "新密码（≥ 8 位）"),
+    Object.assign(el("input"), { type: "password", id: "new1", autocomplete: "new-password" }),
+    el("label", {}, "再输一遍新密码"),
+    Object.assign(el("input"), { type: "password", id: "new2", autocomplete: "new-password" }),
+    el("div", { className: "error-msg", id: "err" }),
+    el("div", { className: "info-msg", id: "info" }),
+    el("div", { className: "pow-progress", id: "powp" }),
+    el("div", { className: "row-buttons" },
+      Object.assign(el("button", { id: "submit" }), { textContent: "保存" }),
+      Object.assign(el("button", { className: "ghost" }), { textContent: "返回菜单", onclick: showMenu }),
+    ),
+  );
+  screen.append(card);
+  app.append(screen);
+
+  const errEl = card.querySelector("#err");
+  const infoEl = card.querySelector("#info");
+  const powp = card.querySelector("#powp");
+  const submit = card.querySelector("#submit");
+  submit.onclick = async () => {
+    errEl.textContent = ""; infoEl.textContent = "";
+    const old_password = card.querySelector("#old").value;
+    const new1 = card.querySelector("#new1").value;
+    const new2 = card.querySelector("#new2").value;
+    if (!old_password || !new1 || !new2) { errEl.textContent = "三个框都得填"; return; }
+    if (new1 !== new2) { errEl.textContent = "两次新密码不一致"; return; }
+    if (new1.length < 8) { errEl.textContent = "新密码至少 8 位"; return; }
+    if (new1 === old_password) { errEl.textContent = "新密码不能跟当前密码相同"; return; }
+    submit.disabled = true;
+    submit.textContent = "验证中…";
+    try {
+      const ch = await apiPost("/api/pow/challenge", {});
+      const pow = await new Promise((resolve, reject) => {
+        const w = new Worker(`${window.__BASE__ || ""}/pow.js`);
+        w.onmessage = (e) => {
+          if (e.data.type === "progress") powp.textContent = `算力验证：${e.data.attempts}`;
+          else if (e.data.type === "done") { w.terminate(); resolve({ id: ch.id, nonce: e.data.nonce }); }
+          else if (e.data.type === "error") { w.terminate(); reject(new Error(e.data.message)); }
+        };
+        w.onerror = (err) => { w.terminate(); reject(err); };
+        w.postMessage({ challenge: ch.challenge, difficulty: ch.difficulty });
+      });
+      submit.textContent = "保存中…";
+      const res = await apiPost("/api/change-password", { old_password, new_password: new1, pow }, sessionCsrf);
+      if (res.error) {
+        errEl.textContent = changePwErrMsg(res.error);
+      } else {
+        infoEl.textContent = "密码已更新（其他设备的登录已被踢下线）";
+        card.querySelector("#old").value = "";
+        card.querySelector("#new1").value = "";
+        card.querySelector("#new2").value = "";
+      }
+    } catch (e) {
+      errEl.textContent = String(e.message || e);
+    }
+    submit.disabled = false;
+    submit.textContent = "保存";
+    powp.textContent = "";
+  };
+}
+
+function changePwErrMsg(code) {
+  return ({
+    invalid_input: "输入格式不对",
+    invalid_password: "新密码至少 8 位",
+    same_password: "新密码不能跟当前密码相同",
+    invalid_pow: "验证失败，刷新重试",
+    bad_old_password: "当前密码错误",
+    csrf: "登录已过期，请重新登录",
+    unauth: "登录已过期，请重新登录",
+  })[code] || code || "出错了";
 }
 
 async function showHistory() {

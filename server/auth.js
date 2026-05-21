@@ -253,6 +253,39 @@ export function registerAuthRoutes(app) {
     });
   });
 
+  app.post("/api/change-password", async (req, res) => {
+    const ctx = requireSession(req);
+    if (!ctx) return res.status(401).json({ error: "unauth" });
+    if (!requireCsrf(req, ctx.session.csrf_token)) {
+      return res.status(403).json({ error: "csrf" });
+    }
+    const { old_password, new_password, pow } = req.body || {};
+    const ip = clientIp(req);
+    if (typeof old_password !== "string" || typeof new_password !== "string") {
+      return res.status(400).json({ error: "invalid_input" });
+    }
+    if (new_password.length < 8 || new_password.length > 200) {
+      return res.status(400).json({ error: "invalid_password" });
+    }
+    if (old_password === new_password) {
+      return res.status(400).json({ error: "same_password" });
+    }
+    if (!pow || !verifyChallenge(pow, ip)) {
+      recordPowFailure(ip);
+      return res.status(400).json({ error: "invalid_pow" });
+    }
+    const ok = await argon2.verify(ctx.user.password_hash, old_password).catch(() => false);
+    if (!ok) {
+      return res.status(401).json({ error: "bad_old_password" });
+    }
+    const newHash = await argon2.hash(new_password, ARGON_OPTS);
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, ctx.user.id);
+    // Kill every session except the current one so the user stays signed in
+    // here but other devices are logged out.
+    db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").run(ctx.user.id, ctx.session.id);
+    res.json({ ok: true });
+  });
+
   app.get("/api/history", (req, res) => {
     const ctx = requireSession(req);
     if (!ctx) return res.status(401).json({ error: "unauth" });

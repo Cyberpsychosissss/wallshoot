@@ -65,6 +65,11 @@ db.exec(`
   );
 `);
 
+// Sweep orphans + expired sessions on boot — recovers from direct SQL edits
+// that may have bypassed ON DELETE CASCADE.
+db.prepare("DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users)").run();
+db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
+
 export function now() {
   return Date.now();
 }

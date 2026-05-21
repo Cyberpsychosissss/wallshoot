@@ -1,0 +1,8 @@
+node_modules
+data
+.env
+.env.local
+.git
+*.log
+README.md
+AGENTS.md

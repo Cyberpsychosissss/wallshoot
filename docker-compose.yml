@@ -1,0 +1,17 @@
+services:
+  wallshoot:
+    build: .
+    container_name: wallshoot
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=${NODE_ENV-production}
+      - PORT=8088
+      - SUBPATH=${SUBPATH-/wallshoot}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL-https://home.wtfareudoing.com/wallshoot}
+      - MAILER_URL=${MAILER_URL-http://172.17.0.1:8097}
+      - MAILER_API_KEY=${MAILER_API_KEY}
+      - SESSION_SECRET=${SESSION_SECRET}

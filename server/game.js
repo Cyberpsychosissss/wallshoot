@@ -1,16 +1,10 @@
 import {
-  BO_BEST_OF,
-  BULLETS_PER_TURN,
-  DMG_HEAD,
-  DMG_LIMB,
-  DMG_TORSO,
-  INITIAL_HP,
-  PREP_SECONDS,
   TICK_INTERVAL_MS,
   TICK_RATE,
   WALL_COLS,
   WALL_ROWS,
 } from "./constants.js";
+import { settings } from "./settings.js";
 import { createWall, seedInitialHoles, wallToBase64 } from "./wall.js";
 import { hitTest, POSTURE_NAMES } from "./stickman.js";
 import { createBuffer, pushFrame, snapshot, clearBuffer } from "./replay.js";
@@ -47,8 +41,8 @@ export function createGame({ playerAId, playerBId }) {
     shooterIdx: 0,
     // per-player live state
     players: [
-      { id: playerAId, hp: INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
-      { id: playerBId, hp: INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
+      { id: playerAId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
+      { id: playerBId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
     ],
     wall: createWall(),
     events: [], // transient events emitted this tick (sounds, hit flashes)
@@ -71,15 +65,15 @@ export function startMatch(state) {
 }
 
 function startRound(state) {
-  state.players[0].hp = INITIAL_HP;
-  state.players[1].hp = INITIAL_HP;
+  state.players[0].hp = settings.INITIAL_HP;
+  state.players[1].hp = settings.INITIAL_HP;
   state.players[0].posture = "stand";
   state.players[1].posture = "stand";
   state.players[0].anchorCol = 6;
   state.players[1].anchorCol = 6;
   state.players[0].aim = { col: 6, row: 6 };
   state.players[1].aim = { col: 6, row: 6 };
-  state.players[state.shooterIdx].ammo = BULLETS_PER_TURN;
+  state.players[state.shooterIdx].ammo = settings.BULLETS_PER_TURN;
   state.players[1 - state.shooterIdx].ammo = 0;
   state.wall = createWall();
   seedInitialHoles(state.wall);
@@ -143,7 +137,7 @@ function doFire(state) {
     // Hole — bullet passes through; check hitbox.
     const part = hitTest(col, row, hider.anchorCol, hider.posture);
     if (part) {
-      const dmg = part === "head" ? DMG_HEAD : part === "torso" ? DMG_TORSO : DMG_LIMB;
+      const dmg = part === "head" ? settings.DMG_HEAD : part === "torso" ? settings.DMG_TORSO : settings.DMG_LIMB;
       hider.hp = Math.max(0, hider.hp - dmg);
       state.events.push({ t: "hit", col, row, part, victimIdx: 1 - state.shooterIdx, dmg });
       state.lastHitAt = state.tick;
@@ -162,7 +156,7 @@ function doFire(state) {
 
 function swapShooter(state) {
   state.shooterIdx = 1 - state.shooterIdx;
-  state.players[state.shooterIdx].ammo = BULLETS_PER_TURN;
+  state.players[state.shooterIdx].ammo = settings.BULLETS_PER_TURN;
   state.players[1 - state.shooterIdx].ammo = 0;
   state.events.push({ t: "swap", new_shooter_idx: state.shooterIdx });
 }
@@ -184,7 +178,7 @@ function finishSlowmo(state) {
   if (winnerIdx === 0) state.scoreA += 1;
   else state.scoreB += 1;
   state.events.push({ t: "round_end", winnerIdx, scoreA: state.scoreA, scoreB: state.scoreB });
-  const needed = Math.ceil(BO_BEST_OF / 2);
+  const needed = Math.ceil(settings.BO_BEST_OF / 2);
   if (state.scoreA >= needed || state.scoreB >= needed) {
     state.matchResult = {
       winnerIdx: state.scoreA > state.scoreB ? 0 : 1,
@@ -220,7 +214,7 @@ export function tick(state) {
 
   switch (state.phase) {
     case PHASE.PREP: {
-      if (phaseElapsedMs(state) >= PREP_SECONDS * 1000) {
+      if (phaseElapsedMs(state) >= settings.PREP_SECONDS * 1000) {
         setPhase(state, PHASE.BATTLE);
       }
       break;
@@ -307,7 +301,7 @@ export function serializeForClient(state, viewerIdx) {
 
 function phaseRemainingSeconds(state) {
   let total = 0;
-  if (state.phase === PHASE.PREP) total = PREP_SECONDS;
+  if (state.phase === PHASE.PREP) total = settings.PREP_SECONDS;
   else if (state.phase === PHASE.SLOWMO) total = SLOWMO_MS / 1000;
   else if (state.phase === PHASE.ROUND_END) total = ROUND_END_MS / 1000;
   else return null;

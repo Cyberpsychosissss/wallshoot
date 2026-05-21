@@ -1,11 +1,11 @@
 import { db, now } from "./db.js";
-import { RATING_ROUND_DELTA, RATING_MATCH_DELTA } from "./constants.js";
+import { settings } from "./settings.js";
 
 export function recordMatch({ winnerId, loserId, winnerScore, loserScore }) {
   const delta =
-    winnerScore * RATING_ROUND_DELTA -
-    loserScore * RATING_ROUND_DELTA +
-    RATING_MATCH_DELTA;
+    winnerScore * settings.RATING_ROUND_DELTA -
+    loserScore * settings.RATING_ROUND_DELTA +
+    settings.RATING_MATCH_DELTA;
 
   const winner = db
     .prepare("SELECT rating, wins, losses FROM users WHERE id = ?")

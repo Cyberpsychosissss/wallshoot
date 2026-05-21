@@ -3,11 +3,13 @@ import { renderLogin, renderRegister, fetchMe, logout } from "./auth.js";
 import { createRenderer } from "./render.js";
 import { attachInput } from "./input.js";
 import { audio, unlockAudio } from "./audio.js";
+import { showAdmin } from "./admin.js";
 
 const app = document.getElementById("app");
 
 let socket = null;
 let me = null;
+let sessionCsrf = null;
 let renderer = null;
 let currentState = null;
 let lastEventTick = -1;
@@ -27,6 +29,9 @@ async function boot() {
   const res = await fetchMe();
   if (res?.user) {
     me = res.user;
+    sessionCsrf = res.csrf || null;
+    const ac = await apiGet("/api/admin/check");
+    me.is_admin = !!ac?.is_admin;
     showMenu();
   } else {
     showAuth("login");
@@ -36,8 +41,11 @@ async function boot() {
 function showAuth(which) {
   document.body.classList.remove("game-mode");
   const switchTo = (next) => showAuth(next);
-  const onSuccess = (res) => {
+  const onSuccess = async (res) => {
     me = res.user;
+    sessionCsrf = res.csrf || null;
+    const ac = await apiGet("/api/admin/check");
+    me.is_admin = !!ac?.is_admin;
     showMenu();
   };
   if (which === "register") renderRegister(app, { switchTo, onSuccess });
@@ -64,6 +72,9 @@ function showMenu() {
     ),
     el("div", { className: "row-buttons", style: "margin-top:28px;" },
       Object.assign(el("button", { className: "secondary" }), { textContent: "战绩", onclick: () => showHistory() }),
+      me.is_admin
+        ? Object.assign(el("button", { className: "secondary" }), { textContent: "管理后台", onclick: () => showAdmin(app, { onBack: showMenu, sessionCsrf }) })
+        : null,
       Object.assign(el("button", { className: "ghost" }), { textContent: "退出登录", onclick: async () => {
         await logout(); me = null; if (socket) { socket.disconnect(); socket = null; }
         showAuth("login");

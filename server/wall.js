@@ -1,10 +1,5 @@
-import {
-  WALL_COLS,
-  WALL_ROWS,
-  INITIAL_HOLES_MIN,
-  INITIAL_HOLES_MAX,
-  INITIAL_HOLES_HEAD_ROW_GUARD,
-} from "./constants.js";
+import { WALL_COLS, WALL_ROWS } from "./constants.js";
+import { settings } from "./settings.js";
 
 export function createWall() {
   // 0 = intact, 1 = hole
@@ -16,13 +11,15 @@ function randInt(a, b) {
 }
 
 export function seedInitialHoles(wall) {
-  const count = randInt(INITIAL_HOLES_MIN, INITIAL_HOLES_MAX);
+  const lo = Math.min(settings.INITIAL_HOLES_MIN, settings.INITIAL_HOLES_MAX);
+  const hi = Math.max(settings.INITIAL_HOLES_MIN, settings.INITIAL_HOLES_MAX);
+  const count = randInt(lo, hi);
   let placed = 0;
   let tries = 0;
   while (placed < count && tries < 200) {
     tries++;
     const col = randInt(0, WALL_COLS - 1);
-    const row = randInt(INITIAL_HOLES_HEAD_ROW_GUARD, WALL_ROWS - 1);
+    const row = randInt(settings.INITIAL_HOLES_HEAD_ROW_GUARD, WALL_ROWS - 1);
     const idx = row * WALL_COLS + col;
     if (wall[idx] === 1) continue;
     wall[idx] = 1;

@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import "./db.js";
 import { SUBPATH } from "./constants.js";
 import { registerAuthRoutes, authSocketMiddleware } from "./auth.js";
+import { registerAdminRoutes } from "./admin.js";
 import { registerRoomHandlers } from "./rooms.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +23,7 @@ app.use(express.json({ limit: "32kb" }));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 registerAuthRoutes(app);
+registerAdminRoutes(app);
 
 const indexHtml = readFileSync(join(CLIENT_DIR, "index.html"), "utf8").replace(
   /\{\{BASE\}\}/g,

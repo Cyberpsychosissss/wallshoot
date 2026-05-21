@@ -41,3 +41,28 @@ export async function sendActivation({ to, link }) {
   const text = `激活你的 Wallshoot 账号：${link}\n（24 小时内有效。非本人操作请忽略。）`;
   return sendRaw({ to, subject, html, text });
 }
+
+export async function sendVerificationCode({ to, code, ttlMinutes }) {
+  if (!MAILER_API_KEY) {
+    console.warn("[mailer] MAILER_API_KEY not set; dev mode CODE for", to, "=", code);
+    return { ok: true, dev: true };
+  }
+  const res = await fetch(`${MAILER_URL}/send`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": MAILER_API_KEY,
+    },
+    body: JSON.stringify({
+      to,
+      template: "verification_code",
+      variables: { code, ttl_minutes: ttlMinutes, app_name: "Wallshoot" },
+      from_name: "Wallshoot",
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`mailer ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.json().catch(() => ({ ok: true }));
+}

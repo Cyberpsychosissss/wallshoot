@@ -1,5 +1,5 @@
 import { connect, apiGet, apiPost } from "./net.js";
-import { renderLogin, renderRegister, fetchMe, logout } from "./auth.js";
+import { renderAuth, fetchMe, logout } from "./auth.js";
 import { createRenderer } from "./render.js";
 import { attachInput } from "./input.js";
 import { audio, unlockAudio } from "./audio.js";
@@ -34,13 +34,12 @@ async function boot() {
     me.is_admin = !!ac?.is_admin;
     showMenu();
   } else {
-    showAuth("login");
+    showAuth();
   }
 }
 
-function showAuth(which) {
+function showAuth() {
   document.body.classList.remove("game-mode");
-  const switchTo = (next) => showAuth(next);
   const onSuccess = async (res) => {
     me = res.user;
     sessionCsrf = res.csrf || null;
@@ -48,8 +47,7 @@ function showAuth(which) {
     me.is_admin = !!ac?.is_admin;
     showMenu();
   };
-  if (which === "register") renderRegister(app, { switchTo, onSuccess });
-  else renderLogin(app, { switchTo, onSuccess });
+  renderAuth(app, { onSuccess });
 }
 
 function showMenu() {
@@ -78,7 +76,7 @@ function showMenu() {
         : null,
       Object.assign(el("button", { className: "ghost" }), { textContent: "退出登录", onclick: async () => {
         await logout(); me = null; if (socket) { socket.disconnect(); socket = null; }
-        showAuth("login");
+        showAuth();
       }}),
     ),
   );

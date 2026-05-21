@@ -2,14 +2,26 @@ import argon2 from "argon2";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { db, now } from "./db.js";
 import { issueChallenge, verifyChallenge, recordPowFailure } from "./pow.js";
-import { sendActivation } from "./mailer.js";
+import { sendVerificationCode } from "./mailer.js";
 import {
-  ACTIVATION_TTL_MS,
   LOGIN_FAIL_LIMIT,
   LOGIN_LOCK_MS,
-  PUBLIC_BASE_URL,
   SESSION_TTL_MS,
 } from "./constants.js";
+
+const REG_CODE_TTL_MS = 10 * 60 * 1000;
+const REG_CODE_RESEND_COOLDOWN_MS = 60 * 1000;
+const REG_CODE_MAX_ATTEMPTS = 5;
+const regCodes = new Map(); // emailLc → { code, expiresAt, attempts, lastSentAt }
+
+function genCode() {
+  // 6 digits, leading zeros possible
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+}
+setInterval(() => {
+  const t = Date.now();
+  for (const [k, v] of regCodes) if (v.expiresAt < t) regCodes.delete(k);
+}, 60_000).unref();
 
 const ARGON_OPTS = {
   type: argon2.argon2id,
@@ -117,14 +129,11 @@ export function registerAuthRoutes(app) {
     res.json(ch);
   });
 
-  app.post("/api/register", async (req, res) => {
-    const { email, password, pow } = req.body || {};
+  app.post("/api/register/send-code", async (req, res) => {
+    const { email, pow } = req.body || {};
     const ip = clientIp(req);
     if (typeof email !== "string" || !EMAIL_RE.test(email)) {
       return res.status(400).json({ error: "invalid_email" });
-    }
-    if (typeof password !== "string" || password.length < 8 || password.length > 200) {
-      return res.status(400).json({ error: "invalid_password" });
     }
     if (!pow || !verifyChallenge(pow, ip)) {
       recordPowFailure(ip);
@@ -137,53 +146,94 @@ export function registerAuthRoutes(app) {
     if (existing && existing.activated) {
       return res.status(409).json({ error: "email_taken" });
     }
-    const password_hash = await argon2.hash(password, ARGON_OPTS);
-    const token = randomBytes(32).toString("hex");
     const t = now();
-    const expires = t + ACTIVATION_TTL_MS;
-    if (existing) {
-      db.prepare(
-        "UPDATE users SET password_hash=?, activation_token=?, activation_expires=? WHERE id=?",
-      ).run(password_hash, token, expires, existing.id);
-    } else {
-      db.prepare(
-        `INSERT INTO users (email, email_lc, password_hash, activated, activation_token, activation_expires, created_at)
-         VALUES (?, ?, ?, 0, ?, ?, ?)`,
-      ).run(email, email_lc, password_hash, token, expires, t);
+    const prev = regCodes.get(email_lc);
+    if (prev && t - prev.lastSentAt < REG_CODE_RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((REG_CODE_RESEND_COOLDOWN_MS - (t - prev.lastSentAt)) / 1000);
+      return res.status(429).json({ error: "resend_cooldown", retry_after_seconds: wait });
     }
-    const link = `${PUBLIC_BASE_URL}/api/activate?token=${token}`;
+    const code = genCode();
+    regCodes.set(email_lc, {
+      code,
+      expiresAt: t + REG_CODE_TTL_MS,
+      attempts: 0,
+      lastSentAt: t,
+    });
     try {
-      await sendActivation({ to: email, link });
+      await sendVerificationCode({
+        to: email,
+        code,
+        ttlMinutes: Math.floor(REG_CODE_TTL_MS / 60000),
+      });
     } catch (e) {
-      console.error("[auth] sendActivation failed:", e.message);
+      console.error("[auth] sendVerificationCode failed:", e.message);
+      regCodes.delete(email_lc);
       return res.status(502).json({ error: "mail_failed" });
     }
-    res.json({ ok: true });
+    res.json({ ok: true, ttl_seconds: Math.floor(REG_CODE_TTL_MS / 1000) });
   });
 
-  app.get("/api/activate", (req, res) => {
-    const token = req.query.token;
-    if (typeof token !== "string" || !token) {
-      return res.status(400).type("html").send(activationPage("缺少 token", false));
+  app.post("/api/register/verify", async (req, res) => {
+    const { email, code, password, pow } = req.body || {};
+    const ip = clientIp(req);
+    if (typeof email !== "string" || !EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: "invalid_email" });
     }
-    const row = db
-      .prepare(
-        "SELECT id, activation_expires, activated FROM users WHERE activation_token = ?",
-      )
-      .get(token);
-    if (!row) {
-      return res.status(404).type("html").send(activationPage("链接无效", false));
+    if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ error: "invalid_code" });
     }
-    if (row.activated) {
-      return res.type("html").send(activationPage("账号已激活过，直接登录即可。", true));
+    if (typeof password !== "string" || password.length < 8 || password.length > 200) {
+      return res.status(400).json({ error: "invalid_password" });
     }
-    if (row.activation_expires < now()) {
-      return res.status(410).type("html").send(activationPage("链接已过期，请重新注册。", false));
+    if (!pow || !verifyChallenge(pow, ip)) {
+      recordPowFailure(ip);
+      return res.status(400).json({ error: "invalid_pow" });
     }
-    db.prepare(
-      "UPDATE users SET activated=1, activation_token=NULL, activation_expires=NULL WHERE id=?",
-    ).run(row.id);
-    res.type("html").send(activationPage("激活成功！现在可以登录开打了。", true));
+    const email_lc = email.toLowerCase();
+    const entry = regCodes.get(email_lc);
+    if (!entry) return res.status(400).json({ error: "code_not_found" });
+    if (entry.expiresAt < now()) {
+      regCodes.delete(email_lc);
+      return res.status(400).json({ error: "code_expired" });
+    }
+    if (entry.attempts >= REG_CODE_MAX_ATTEMPTS) {
+      regCodes.delete(email_lc);
+      return res.status(429).json({ error: "code_too_many_attempts" });
+    }
+    if (!safeEqual(code, entry.code)) {
+      entry.attempts += 1;
+      return res.status(400).json({ error: "code_wrong", attempts_left: REG_CODE_MAX_ATTEMPTS - entry.attempts });
+    }
+    // Code matched — consume it
+    regCodes.delete(email_lc);
+
+    const existing = db
+      .prepare("SELECT id, activated FROM users WHERE email_lc = ?")
+      .get(email_lc);
+    if (existing && existing.activated) {
+      return res.status(409).json({ error: "email_taken" });
+    }
+    const password_hash = await argon2.hash(password, ARGON_OPTS);
+    const t = now();
+    if (existing) {
+      db.prepare(
+        "UPDATE users SET password_hash=?, activated=1, activation_token=NULL, activation_expires=NULL WHERE id=?",
+      ).run(password_hash, existing.id);
+    } else {
+      db.prepare(
+        `INSERT INTO users (email, email_lc, password_hash, activated, created_at)
+         VALUES (?, ?, ?, 1, ?)`,
+      ).run(email, email_lc, password_hash, t);
+    }
+    // Auto-login the newly created account
+    const user = db.prepare("SELECT * FROM users WHERE email_lc = ?").get(email_lc);
+    const sess = createSession(user.id);
+    setSessionCookie(res, sess.id);
+    res.json({
+      ok: true,
+      csrf: sess.csrf,
+      user: { id: user.id, email: user.email, rating: user.rating, wins: user.wins, losses: user.losses },
+    });
   });
 
   app.post("/api/login", async (req, res) => {
@@ -324,20 +374,3 @@ export function authSocketMiddleware(socket, next) {
   next();
 }
 
-function activationPage(msg, ok) {
-  const color = ok ? "#0a0" : "#a00";
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Wallshoot 激活</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body{font-family:-apple-system,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:20px;}
-.box{max-width:420px;background:#1c1c1c;border:1px solid #333;border-radius:10px;padding:32px;text-align:center;}
-.msg{color:${color};font-size:18px;margin:16px 0;}
-a{color:#d33;}
-</style></head>
-<body><div class="box">
-<h1 style="color:#d33;margin:0 0 16px;">Wallshoot</h1>
-<div class="msg">${msg}</div>
-${ok ? '<a href="/">回到首页登录 →</a>' : '<a href="/">回到首页</a>'}
-</div></body></html>`;
-}

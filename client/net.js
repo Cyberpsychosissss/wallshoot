@@ -27,6 +27,13 @@ export async function connect() {
     transports: ["websocket", "polling"],
     autoConnect: true,
     withCredentials: true,
+    // Reconnect aggressively for the first ~30 seconds; the server's grace
+    // window is 30s, so there's no point retrying beyond that.
+    reconnection: true,
+    reconnectionAttempts: 30,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 2500,
+    randomizationFactor: 0.4,
   });
   return sock;
 }

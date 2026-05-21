@@ -233,6 +233,14 @@ async function connectSocket() {
 
 function setupSocketHandlers() {
   socket.on("room:state", (s) => {
+    if (s.resumed) {
+      // Server reattached us to an in-progress room after reconnect
+      if (s.status === "playing" && !document.body.classList.contains("game-mode")) {
+        showGame(s);
+      }
+      hideReconnectOverlay("self");
+      return;
+    }
     if (s.status === "waiting") showWaitingRoom(s.code);
     else if (s.status === "playing") showGame(s);
   });
@@ -257,13 +265,79 @@ function setupSocketHandlers() {
     if (slowmoTimer) { clearTimeout(slowmoTimer); slowmoTimer = null; }
     showMatchEnd(result);
   });
+  socket.on("game:opponent_disconnected", ({ grace_ms }) => {
+    showOpponentDisconnectedOverlay(grace_ms || 30000);
+  });
+  socket.on("game:opponent_rejoined", () => {
+    hideReconnectOverlay("opponent");
+    toast("对手回来了");
+  });
   socket.on("game:opponent_left", () => {
+    hideReconnectOverlay("opponent");
     toast("对手离开了房间");
     setTimeout(showMenu, 1500);
   });
   socket.on("disconnect", () => {
-    if (document.body.classList.contains("game-mode")) toast("连接断开");
+    if (document.body.classList.contains("game-mode") || document.querySelector(".lobby-code")) {
+      showSelfReconnectingOverlay();
+    }
   });
+  socket.on("reconnect_failed", () => {
+    hideReconnectOverlay("self");
+    if (document.body.classList.contains("game-mode") || document.querySelector(".lobby-code")) {
+      toast("重连失败，返回菜单");
+      setTimeout(showMenu, 1500);
+    }
+  });
+}
+
+// ── Reconnect overlays ────────────────────────────────────────────────
+let selfReconnectOverlay = null;
+let opponentDisconnectOverlay = null;
+let opponentCountdownTimer = null;
+
+function showSelfReconnectingOverlay() {
+  if (selfReconnectOverlay) return;
+  selfReconnectOverlay = el("div", { className: "overlay reconnect" });
+  selfReconnectOverlay.innerHTML = `
+    <div class="spinner"></div>
+    <h2>连接中断</h2>
+    <p>正在重连，请稍候…</p>
+    <p style="font-size:12px;margin-top:6px;">如果一直没反应，刷新页面重新登录</p>
+  `;
+  document.body.append(selfReconnectOverlay);
+}
+
+function showOpponentDisconnectedOverlay(graceMs) {
+  hideReconnectOverlay("opponent");
+  const startedAt = Date.now();
+  opponentDisconnectOverlay = el("div", { className: "overlay reconnect opponent" });
+  opponentDisconnectOverlay.innerHTML = `
+    <h2 style="color:var(--warn);">对手掉线</h2>
+    <p>等待对方重连，<span class="cd">${Math.ceil(graceMs / 1000)}</span>s 内未回来将判离场</p>
+  `;
+  document.body.append(opponentDisconnectOverlay);
+  opponentCountdownTimer = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((graceMs - (Date.now() - startedAt)) / 1000));
+    const cd = opponentDisconnectOverlay?.querySelector(".cd");
+    if (cd) cd.textContent = String(remaining);
+    if (remaining <= 0) {
+      clearInterval(opponentCountdownTimer);
+      opponentCountdownTimer = null;
+    }
+  }, 500);
+}
+
+function hideReconnectOverlay(which) {
+  if ((which === "self" || which === "both") && selfReconnectOverlay) {
+    selfReconnectOverlay.remove();
+    selfReconnectOverlay = null;
+  }
+  if ((which === "opponent" || which === "both") && opponentDisconnectOverlay) {
+    opponentDisconnectOverlay.remove();
+    opponentDisconnectOverlay = null;
+    if (opponentCountdownTimer) { clearInterval(opponentCountdownTimer); opponentCountdownTimer = null; }
+  }
 }
 
 async function createRoom() {

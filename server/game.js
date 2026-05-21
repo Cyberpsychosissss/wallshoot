@@ -91,6 +91,15 @@ function phaseElapsedMs(state) {
   return (state.tick - state.phaseStartedAt) * TICK_INTERVAL_MS;
 }
 
+// Zero out a player's continuous input state — used when their socket drops
+// so they don't keep drifting / firing while the game is paused.
+export function resetPlayerInput(state, playerIdx) {
+  if (!state) return;
+  const p = state.players[playerIdx];
+  if (!p) return;
+  p.moveDir = 0;
+}
+
 export function applyInput(state, playerIdx, input) {
   if (state.phase === PHASE.MATCH_END) return;
   const p = state.players[playerIdx];

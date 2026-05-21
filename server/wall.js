@@ -47,35 +47,62 @@ export function breakCell(wall, col, row) {
   return true;
 }
 
-// Splash: breaks the center cell + a random subset of nearby cells, returning
-// a list of {col, row} for cells that actually flipped from intact → hole.
+// Splash: irregular round crater around the impact point. Inner ring is
+// guaranteed to break; outer ring breaks with probability that decays with
+// euclidean distance — so the result reads as a fuzzy circle, not a square.
 export function breakArea(wall, centerCol, centerRow) {
   const broken = [];
-  // Always break center if intact and not in sky.
   if (breakCell(wall, centerCol, centerRow)) broken.push({ col: centerCol, row: centerRow });
-  // Gather candidate neighbours within chebyshev radius.
-  const candidates = [];
-  for (let dr = -SPLASH_RADIUS; dr <= SPLASH_RADIUS; dr++) {
-    for (let dc = -SPLASH_RADIUS; dc <= SPLASH_RADIUS; dc++) {
+  const radius = SPLASH_RADIUS;
+  for (let dr = -radius; dr <= radius; dr++) {
+    for (let dc = -radius; dc <= radius; dc++) {
       if (dr === 0 && dc === 0) continue;
+      const dist = Math.sqrt(dr * dr + dc * dc);
+      if (dist > radius + 0.4) continue;
       const r = centerRow + dr, c = centerCol + dc;
-      if (r < 0 || r >= WALL_ROWS) continue;
-      if (c < 0 || c >= WALL_COLS) continue;
-      if (wall[r * WALL_COLS + c] !== 0) continue; // skip holes / sky
-      candidates.push({ col: c, row: r });
+      if (r < 0 || r >= WALL_ROWS || c < 0 || c >= WALL_COLS) continue;
+      if (wall[r * WALL_COLS + c] !== 0) continue;
+      // Probability: inner (dist ≤ 1.1) always breaks; mid ring high prob;
+      // outer ring sparse.
+      let p;
+      if (dist <= 1.1) p = 1.0;
+      else if (dist <= 1.6) p = 0.85;
+      else if (dist <= 2.1) p = 0.55;
+      else p = 0.25;
+      if (Math.random() < p && breakCell(wall, c, r)) {
+        broken.push({ col: c, row: r });
+      }
     }
   }
-  // Shuffle (Fisher-Yates) and take a random count between MIN-1 and MAX-1
-  // (the center cell already counts towards the total).
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  // Cap to MAX (rare; usually probabilities self-limit).
+  if (broken.length > SPLASH_BREAK_MAX) {
+    // Drop the farthest excess cells
+    broken.sort((a, b) => {
+      const da = (a.col - centerCol) ** 2 + (a.row - centerRow) ** 2;
+      const db = (b.col - centerCol) ** 2 + (b.row - centerRow) ** 2;
+      return da - db;
+    });
+    const dropped = broken.splice(SPLASH_BREAK_MAX);
+    for (const d of dropped) wall[d.row * WALL_COLS + d.col] = 0; // restore
   }
-  const targetExtra = randInt(SPLASH_BREAK_MIN - 1, SPLASH_BREAK_MAX - 1);
-  const extras = Math.min(targetExtra, candidates.length);
-  for (let i = 0; i < extras; i++) {
-    const { col, row } = candidates[i];
-    if (breakCell(wall, col, row)) broken.push({ col, row });
+  // Ensure minimum spread for visual punch
+  if (broken.length < SPLASH_BREAK_MIN) {
+    const ringCandidates = [];
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const dist = Math.sqrt(dr * dr + dc * dc);
+        if (dist > radius + 0.5) continue;
+        const r = centerRow + dr, c = centerCol + dc;
+        if (r < 0 || r >= WALL_ROWS || c < 0 || c >= WALL_COLS) continue;
+        if (wall[r * WALL_COLS + c] === 0) ringCandidates.push({ c, r, dist });
+      }
+    }
+    ringCandidates.sort((a, b) => a.dist - b.dist);
+    for (const cand of ringCandidates) {
+      if (broken.length >= SPLASH_BREAK_MIN) break;
+      if (breakCell(wall, cand.c, cand.r)) broken.push({ col: cand.c, row: cand.r });
+    }
   }
   return broken;
 }

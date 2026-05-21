@@ -32,7 +32,16 @@ async function boot() {
     sessionCsrf = res.csrf || null;
     const ac = await apiGet("/api/admin/check");
     me.is_admin = !!ac?.is_admin;
-    showMenu();
+    // Connect socket up-front so the server can auto-resume us into any
+    // in-progress room (room:state with resumed=true will land before the
+    // menu paints).
+    try { await connectSocket(); } catch {}
+    // Give the server a brief window to push room:state(resumed) if the
+    // user was in an active room when they left.
+    await new Promise((r) => setTimeout(r, 400));
+    if (!document.body.classList.contains("game-mode") && !document.querySelector(".lobby-code")) {
+      showMenu();
+    }
   } else {
     showAuth();
   }
@@ -410,6 +419,7 @@ function showGame(roomState) {
   const canvas = el("canvas", { className: "game-canvas" });
   root.append(canvas);
 
+  // Top row: room code | score | timer
   const hudTop = el("div", { className: "hud-top" });
   hudTop.innerHTML = `
     <div class="hud-pill code" id="hud-code">${roomState.code}</div>
@@ -418,12 +428,20 @@ function showGame(roomState) {
   `;
   root.append(hudTop);
 
-  const hudBottom = el("div", { className: "hud-bottom" });
-  hudBottom.innerHTML = `
-    <div class="hp-bar"><div class="hp-fill" id="hp-self" style="width:100%"></div><div class="hp-label" id="hp-label">HP 100</div></div>
-    <div class="ammo-strip" id="ammo-strip"></div>
+  // HP bar + ammo strip — sit just under the top pills, full width
+  const hudStatus = el("div", { className: "hud-status" });
+  hudStatus.innerHTML = `
+    <div class="hp-block">
+      <span class="hp-tag">HP</span>
+      <div class="hp-bar"><div class="hp-fill" id="hp-self" style="width:100%"></div></div>
+      <span class="hp-num" id="hp-label">100</span>
+    </div>
+    <div class="ammo-block" id="ammo-block">
+      <span class="ammo-tag">弹</span>
+      <div class="ammo-strip" id="ammo-strip"></div>
+    </div>
   `;
-  root.append(hudBottom);
+  root.append(hudStatus);
 
   // ── Control panel: shooter buttons (right) + hider buttons (left) ──
   const controls = el("div", { className: "controls" });
@@ -466,23 +484,26 @@ function updateHud(state) {
       timer.textContent = state.phase === "battle" ? "战斗中" : "";
     }
   }
-  const me = state.players[state.viewerIdx];
+  const meP = state.players[state.viewerIdx];
   const fill = document.getElementById("hp-self");
   const label = document.getElementById("hp-label");
   if (fill) {
-    fill.style.width = `${me.hp}%`;
-    fill.className = "hp-fill" + (me.hp < 30 ? " danger" : me.hp < 60 ? " warn" : "");
+    fill.style.width = `${meP.hp}%`;
+    fill.className = "hp-fill" + (meP.hp < 30 ? " danger" : meP.hp < 60 ? " warn" : "");
   }
-  if (label) label.textContent = `HP ${me.hp}`;
+  if (label) label.textContent = String(meP.hp);
   const ammoEl = document.getElementById("ammo-strip");
+  const ammoBlock = document.getElementById("ammo-block");
   const isShooter = state.shooterIdx === state.viewerIdx;
   if (ammoEl) {
-    const ammo = isShooter ? state.players[state.viewerIdx].ammo : 0;
+    const ammo = isShooter ? meP.ammo : 0;
     const total = 6;
     let html = "";
     for (let i = 0; i < total; i++) html += `<div class="ammo-dot${i < ammo ? "" : " spent"}"></div>`;
     ammoEl.innerHTML = html;
-    ammoEl.style.opacity = isShooter ? "1" : "0.3";
+  }
+  if (ammoBlock) {
+    ammoBlock.classList.toggle("dim", !isShooter);
   }
   // Show only the control set matching the current role
   const root = document.querySelector(".game-root");

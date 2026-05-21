@@ -61,13 +61,13 @@ export function createRenderer(canvas) {
     const isShooter = state.isShooterView;
     let wallH, topYFrac;
     if (isShooter) {
-      // Far-and-small: ~32% of canvas height, sitting in the lower half
-      wallH = H * 0.34;
-      topYFrac = 0.50;
+      // Far-and-small: ~22% of canvas height, sitting in the lower-middle
+      wallH = H * 0.22;
+      topYFrac = 0.52;
     } else {
-      // Close-and-large: dominates the lower 60% of canvas
-      wallH = H * 0.60;
-      topYFrac = 0.32;
+      // Close-and-large
+      wallH = H * 0.58;
+      topYFrac = 0.30;
     }
     const cellSize = wallH / 12;
     const coreW = cellSize * 12;
@@ -339,8 +339,8 @@ export function createRenderer(canvas) {
     const me = state.players[state.viewerIdx];
     const isShooter = state.isShooterView;
     const cx = W / 2;
-    const baseY = H * 0.96;
-    const scale = isShooter ? 0.95 : 1.15;
+    const baseY = H * 0.97;
+    const scale = isShooter ? 1.4 : 1.55;
     const tintStroke = isShooter ? "#ff5252" : "#4fc3f7";
     const tintFill   = isShooter ? "#7a1f1f" : "#1e4d63";
     ctx.strokeStyle = tintStroke;

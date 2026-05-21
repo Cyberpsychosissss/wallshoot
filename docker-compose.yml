@@ -4,7 +4,9 @@ services:
     container_name: wallshoot
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8088:8088"
+      # Bind to docker bridge gateway so NPM (in its own docker network)
+      # can reach us, but external/LAN cannot.
+      - "172.17.0.1:8088:8088"
     volumes:
       - ./data:/app/data
     environment:

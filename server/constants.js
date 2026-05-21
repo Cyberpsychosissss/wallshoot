@@ -16,10 +16,16 @@ export const DMG_TORSO = 40;
 export const DMG_LIMB = 20;
 
 export const WALL_COLS = 12;
-export const WALL_ROWS = 24;
+export const WALL_ROWS = 12;
 export const INITIAL_HOLES_MIN = 3;
 export const INITIAL_HOLES_MAX = 5;
-export const INITIAL_HOLES_HEAD_ROW_GUARD = 5;
+export const INITIAL_HOLES_HEAD_ROW_GUARD = 3;
+
+// Splash damage when a bullet hits intact bricks. Center cell + random
+// neighbours inside the radius are all broken.
+export const SPLASH_RADIUS = 2;            // chebyshev distance
+export const SPLASH_BREAK_MIN = 6;
+export const SPLASH_BREAK_MAX = 8;
 
 export const REPLAY_BUFFER_TICKS = 45;
 export const REPLAY_PLAYBACK_RATE = 0.5;

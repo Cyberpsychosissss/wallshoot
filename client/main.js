@@ -1,7 +1,7 @@
 import { connect, apiGet, apiPost } from "./net.js";
 import { renderAuth, fetchMe, logout } from "./auth.js";
 import { createRenderer } from "./render.js";
-import { attachInput } from "./input.js";
+import { attachButtonInput } from "./input.js";
 import { audio, unlockAudio } from "./audio.js";
 import { showAdmin } from "./admin.js";
 
@@ -410,7 +410,6 @@ function showGame(roomState) {
   const canvas = el("canvas", { className: "game-canvas" });
   root.append(canvas);
 
-  // HUD
   const hudTop = el("div", { className: "hud-top" });
   hudTop.innerHTML = `
     <div class="hud-pill code" id="hud-code">${roomState.code}</div>
@@ -426,13 +425,30 @@ function showGame(roomState) {
   `;
   root.append(hudBottom);
 
-  const fireBtn = el("div", { className: "touch-fire-btn" }, "开火");
-  root.append(fireBtn);
+  // ── Control panel: shooter buttons (right) + hider buttons (left) ──
+  const controls = el("div", { className: "controls" });
+  controls.innerHTML = `
+    <div class="ctrl-group ctrl-hider" id="ctrl-hider">
+      <button class="ctrl-btn move-btn" id="btn-move-left">◀</button>
+      <button class="ctrl-btn move-btn" id="btn-move-right">▶</button>
+      <button class="ctrl-btn posture-btn" id="btn-posture">姿势</button>
+    </div>
+    <div class="ctrl-group ctrl-shooter" id="ctrl-shooter">
+      <div class="dpad">
+        <button class="ctrl-btn dpad-up" id="btn-aim-up">▲</button>
+        <button class="ctrl-btn dpad-left" id="btn-aim-left">◀</button>
+        <button class="ctrl-btn dpad-right" id="btn-aim-right">▶</button>
+        <button class="ctrl-btn dpad-down" id="btn-aim-down">▼</button>
+      </div>
+      <button class="ctrl-btn fire-btn" id="btn-fire">开火</button>
+    </div>
+  `;
+  root.append(controls);
 
   app.append(root);
 
   renderer = createRenderer(canvas);
-  attachInput(canvas, renderer, {
+  attachButtonInput({
     sendInput: (input) => socket.emit("game:input", input),
     getState: () => currentState,
   });
@@ -468,11 +484,16 @@ function updateHud(state) {
     ammoEl.innerHTML = html;
     ammoEl.style.opacity = isShooter ? "1" : "0.3";
   }
-  // Role pill on the timer slot when no countdown
-  const fireBtn = document.querySelector(".touch-fire-btn");
+  // Show only the control set matching the current role
+  const root = document.querySelector(".game-root");
+  if (root) {
+    root.classList.toggle("role-shooter", !!isShooter);
+    root.classList.toggle("role-hider", !isShooter);
+  }
+  const fireBtn = document.getElementById("btn-fire");
   if (fireBtn) {
-    fireBtn.style.opacity = (isShooter && state.phase === "battle") ? "1" : "0.3";
-    fireBtn.style.pointerEvents = (isShooter && state.phase === "battle") ? "auto" : "none";
+    const live = isShooter && state.phase === "battle" && state.players[state.viewerIdx].ammo > 0;
+    fireBtn.disabled = !live;
   }
 }
 

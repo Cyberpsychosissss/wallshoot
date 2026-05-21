@@ -5,7 +5,7 @@ import {
   WALL_ROWS,
 } from "./constants.js";
 import { settings } from "./settings.js";
-import { createWall, seedInitialHoles, wallToBase64 } from "./wall.js";
+import { createWall, seedInitialHoles, wallToBase64, breakArea } from "./wall.js";
 import { hitTest, POSTURE_NAMES } from "./stickman.js";
 import { createBuffer, pushFrame, snapshot, clearBuffer } from "./replay.js";
 
@@ -41,8 +41,8 @@ export function createGame({ playerAId, playerBId }) {
     shooterIdx: 0,
     // per-player live state
     players: [
-      { id: playerAId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
-      { id: playerBId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 } },
+      { id: playerAId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 } },
+      { id: playerBId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 } },
     ],
     wall: createWall(),
     events: [], // transient events emitted this tick (sounds, hit flashes)
@@ -71,8 +71,10 @@ function startRound(state) {
   state.players[1].posture = "stand";
   state.players[0].anchorCol = 6;
   state.players[1].anchorCol = 6;
-  state.players[0].aim = { col: 6, row: 6 };
-  state.players[1].aim = { col: 6, row: 6 };
+  state.players[0].aim = { col: 6, row: 12 };
+  state.players[1].aim = { col: 6, row: 12 };
+  state.players[0].aimDir = { col: 0, row: 0 };
+  state.players[1].aimDir = { col: 0, row: 0 };
   state.players[state.shooterIdx].ammo = settings.BULLETS_PER_TURN;
   state.players[1 - state.shooterIdx].ammo = 0;
   state.wall = createWall();
@@ -98,6 +100,7 @@ export function resetPlayerInput(state, playerIdx) {
   const p = state.players[playerIdx];
   if (!p) return;
   p.moveDir = 0;
+  if (p.aimDir) { p.aimDir.col = 0; p.aimDir.row = 0; }
 }
 
 export function applyInput(state, playerIdx, input) {
@@ -108,6 +111,12 @@ export function applyInput(state, playerIdx, input) {
 
   if (isShooter) {
     if (state.phase !== PHASE.BATTLE) return;
+    if (typeof input.aim_dx === "number") {
+      p.aimDir.col = clamp(input.aim_dx, -1, 1);
+    }
+    if (typeof input.aim_dy === "number") {
+      p.aimDir.row = clamp(input.aim_dy, -1, 1);
+    }
     if (typeof input.aim_col === "number") {
       p.aim.col = clamp(input.aim_col, 0, WALL_COLS - 1);
     }
@@ -139,11 +148,11 @@ function doFire(state) {
   const cellIdx = row * WALL_COLS + col;
   const cellState = state.wall[cellIdx];
   if (cellState === 0) {
-    // Intact wall — bullet breaks the cell and stops.
-    state.wall[cellIdx] = 1;
-    state.events.push({ t: "wall_break", col, row });
+    // Intact wall — splash-break a chunk of bricks around the impact.
+    const broken = breakArea(state.wall, col, row);
+    state.events.push({ t: "wall_break", col, row, broken });
   } else {
-    // Hole — bullet passes through; check hitbox.
+    // Already a hole — bullet passes through; check hider hitbox at this cell.
     const part = hitTest(col, row, hider.anchorCol, hider.posture);
     if (part) {
       const dmg = part === "head" ? settings.DMG_HEAD : part === "torso" ? settings.DMG_TORSO : settings.DMG_LIMB;
@@ -219,6 +228,14 @@ export function tick(state) {
       const speed = 4.0 / TICK_RATE; // 4 cells per second
       p.anchorCol = clamp(p.anchorCol + p.moveDir * speed, 1, WALL_COLS - 2);
     }
+  }
+
+  // Shooter aim drift (button-driven)
+  if (state.phase === PHASE.BATTLE) {
+    const sh = state.players[state.shooterIdx];
+    const aimSpeed = 8.0 / TICK_RATE; // ~8 cells per second
+    sh.aim.col = clamp(sh.aim.col + sh.aimDir.col * aimSpeed, 0, WALL_COLS - 1);
+    sh.aim.row = clamp(sh.aim.row + sh.aimDir.row * aimSpeed, 0, WALL_ROWS - 1);
   }
 
   switch (state.phase) {

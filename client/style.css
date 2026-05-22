@@ -296,12 +296,12 @@ input:focus { outline: none; border-color: var(--accent); }
 .controls {
   position: absolute; left: 0; right: 0; bottom: 0;
   display: flex; justify-content: space-between; align-items: flex-end;
-  padding: 14px 18px max(14px, env(safe-area-inset-bottom));
+  padding: 8px 14px max(10px, env(safe-area-inset-bottom));
   pointer-events: none;
   z-index: 15;
   gap: 12px;
 }
-.ctrl-group { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
+.ctrl-group { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
 .ctrl-shooter { margin-left: auto; }
 
 .role-shooter .ctrl-hider,
@@ -311,10 +311,10 @@ input:focus { outline: none; border-color: var(--accent); }
   background: linear-gradient(to bottom, rgba(54,54,60,0.78), rgba(22,22,26,0.85));
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #f0f0f0;
-  font-size: 18px;
+  font-size: 16px;
   padding: 0;
-  width: 50px; height: 50px;
-  border-radius: 14px;
+  width: 44px; height: 44px;
+  border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   touch-action: none;
   user-select: none;
@@ -341,17 +341,18 @@ input:focus { outline: none; border-color: var(--accent); }
 .ctrl-btn:disabled { opacity: 0.32; }
 
 .posture-btn {
-  width: auto; padding: 0 18px;
+  width: auto; padding: 0 16px;
   font-size: 13px;
   letter-spacing: 1px;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .dpad {
   display: grid;
-  grid-template-columns: 50px 50px 50px;
-  grid-template-rows: 50px 50px 50px;
-  gap: 4px;
+  grid-template-columns: 44px 44px 44px;
+  grid-template-rows: 44px 44px 44px;
+  gap: 3px;
+  flex-shrink: 0;
 }
 .dpad-up    { grid-column: 2; grid-row: 1; }
 .dpad-left  { grid-column: 1; grid-row: 2; }
@@ -359,10 +360,11 @@ input:focus { outline: none; border-color: var(--accent); }
 .dpad-down  { grid-column: 2; grid-row: 3; }
 
 .fire-btn {
-  width: 78px; height: 78px;
-  font-size: 15px;
+  width: 68px; height: 68px;
+  font-size: 14px;
   font-weight: 600;
   border-radius: 50%;
+  flex-shrink: 0;
   background: radial-gradient(circle at 35% 25%, #ff7070 0%, #d33 45%, #8a1f1f 100%);
   border-color: rgba(255, 255, 255, 0.35);
   margin-left: 14px;
@@ -383,14 +385,15 @@ input:focus { outline: none; border-color: var(--accent); }
 }
 
 .move-btn {
-  font-size: 20px;
+  font-size: 18px;
 }
 
-@media (max-width: 560px) {
-  .ctrl-btn { width: 46px; height: 46px; font-size: 16px; }
-  .dpad { grid-template-columns: 46px 46px 46px; grid-template-rows: 46px 46px 46px; }
-  .fire-btn { width: 66px; height: 66px; font-size: 14px; }
-  .controls { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
+@media (max-width: 560px), (max-height: 480px) {
+  .ctrl-btn { width: 40px; height: 40px; font-size: 15px; }
+  .dpad { grid-template-columns: 40px 40px 40px; grid-template-rows: 40px 40px 40px; gap: 2px; }
+  .fire-btn { width: 60px; height: 60px; font-size: 13px; }
+  .controls { padding: 6px 10px max(8px, env(safe-area-inset-bottom)); }
+  .posture-btn { padding: 0 12px; font-size: 12px; }
 }
 
 /* ── Orientation hint ── */

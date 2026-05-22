@@ -61,9 +61,10 @@ export function createRenderer(canvas) {
     const isShooter = state.isShooterView;
     let wallH, topYFrac;
     if (isShooter) {
-      // Far-and-small: ~22% of canvas height, sitting in the lower-middle
+      // Far-and-small: ~22% of canvas height, sitting in the upper-middle
+      // so there's plenty of foreground room for the self stickman and HUD.
       wallH = H * 0.22;
-      topYFrac = 0.52;
+      topYFrac = 0.38;
     } else {
       // Close-and-large
       wallH = H * 0.58;
@@ -320,18 +321,47 @@ export function createRenderer(canvas) {
     ctx.arc(aimX, aimY, Math.min(cellW, cellH) * 0.22, 0, Math.PI * 2);
     ctx.fill();
 
-    if (state.isShooterView && state.phase === "battle") {
-      // Beam from muzzle to target
-      const muzzle = { x: L.W / 2, y: L.H * 0.85 };
-      ctx.strokeStyle = "rgba(255,40,40,0.55)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 5]);
+    if (state.phase === "battle") {
+      // Solid laser line — visible to both sides. Shooter sees it from
+      // their muzzle; hider sees the same beam shooting toward the wall
+      // dot from where the distant shooter silhouette is drawn.
+      const muzzle = state.isShooterView
+        ? { x: L.W / 2 + 30, y: L.H * 0.78 }
+        : muzzleFromDistantShooter(L, state);
+      // Outer glow
+      ctx.strokeStyle = "rgba(255,40,40,0.35)";
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(muzzle.x, muzzle.y);
       ctx.lineTo(aimX, aimY);
       ctx.stroke();
-      ctx.setLineDash([]);
+      // Inner bright core
+      ctx.strokeStyle = "rgba(255,80,80,0.95)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(muzzle.x, muzzle.y);
+      ctx.lineTo(aimX, aimY);
+      ctx.stroke();
+      // White hot center streak
+      ctx.strokeStyle = "rgba(255,220,220,0.85)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(muzzle.x, muzzle.y);
+      ctx.lineTo(aimX, aimY);
+      ctx.stroke();
+      ctx.lineCap = "butt";
     }
+  }
+
+  function muzzleFromDistantShooter(L, state) {
+    const { W } = L;
+    const shooter = state.players[state.shooterIdx];
+    const cx = W / 2 + (shooter.aim.col - 6) * 6;
+    const baseY = L.wallTopY - 4;
+    const scale = 0.55;
+    const bodyH = 56 * scale;
+    return { x: cx + 16 * scale, y: baseY - bodyH + 4 * scale };
   }
 
   function drawSelfStickman(L, state) {

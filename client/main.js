@@ -443,13 +443,24 @@ function showGame(roomState) {
   `;
   root.append(hudStatus);
 
+  // Status banner — short message above the wall ("对方正在射击" / "你要躲好" etc.)
+  const banner = el("div", { className: "status-banner", id: "status-banner" });
+  banner.innerHTML = `<span class="banner-text" id="banner-text"></span>`;
+  root.append(banner);
+
   // ── Control panel: shooter buttons (right) + hider buttons (left) ──
   const controls = el("div", { className: "controls" });
   controls.innerHTML = `
     <div class="ctrl-group ctrl-hider" id="ctrl-hider">
-      <button class="ctrl-btn move-btn" id="btn-move-left">◀</button>
-      <button class="ctrl-btn move-btn" id="btn-move-right">▶</button>
-      <button class="ctrl-btn posture-btn" id="btn-posture">姿势</button>
+      <button class="ctrl-btn move-btn big arrow-btn" id="btn-move-left">◀</button>
+      <div class="action-row">
+        <button class="action-btn" id="btn-stand" title="站立"><span class="al">站</span></button>
+        <button class="action-btn" id="btn-crouch" title="蹲下"><span class="al">蹲</span></button>
+        <button class="action-btn" id="btn-prone" title="趴下"><span class="al">趴</span></button>
+        <button class="action-btn" id="btn-dodge" title="闪避"><span class="al">闪</span></button>
+        <button class="action-btn" id="btn-jump" title="跳起"><span class="al">跳</span></button>
+      </div>
+      <button class="ctrl-btn move-btn big arrow-btn" id="btn-move-right">▶</button>
     </div>
     <div class="ctrl-group ctrl-shooter" id="ctrl-shooter">
       <div class="dpad">
@@ -458,7 +469,7 @@ function showGame(roomState) {
         <button class="ctrl-btn dpad-right" id="btn-aim-right">▶</button>
         <button class="ctrl-btn dpad-down" id="btn-aim-down">▼</button>
       </div>
-      <button class="ctrl-btn fire-btn" id="btn-fire">开火</button>
+      <button class="ctrl-btn fire-btn" id="btn-fire">射击</button>
     </div>
   `;
   root.append(controls);
@@ -516,6 +527,36 @@ function updateHud(state) {
     const live = isShooter && state.phase === "battle" && state.players[state.viewerIdx].ammo > 0;
     fireBtn.disabled = !live;
   }
+
+  // Status banner content per role / phase
+  const bannerText = document.getElementById("banner-text");
+  if (bannerText) {
+    let msg = "";
+    if (state.phase === "prep") {
+      msg = isShooter ? "对方正在准备…" : "选好位置 · 等待开战";
+    } else if (state.phase === "battle") {
+      if (isShooter) msg = "瞄准 · 等他露头";
+      else msg = "敌人正在射击 · 你要躲好";
+    } else if (state.phase === "slowmo") {
+      msg = "致命一击";
+    } else if (state.phase === "round_end") {
+      msg = "本局结束";
+    } else if (state.phase === "match_end") {
+      msg = "对战结束";
+    }
+    bannerText.textContent = msg;
+  }
+
+  // Highlight the active posture button
+  const posMap = { stand: "btn-stand", crouch: "btn-crouch", prone: "btn-prone" };
+  for (const [pos, id] of Object.entries(posMap)) {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle("active", meP.posture === pos && !meP.action);
+  }
+  const dodgeBtn = document.getElementById("btn-dodge");
+  if (dodgeBtn) dodgeBtn.classList.toggle("active", meP.action === "dodge_left" || meP.action === "dodge_right");
+  const jumpBtn = document.getElementById("btn-jump");
+  if (jumpBtn) jumpBtn.classList.toggle("active", meP.action === "jump");
 }
 
 function handleEvent(ev, state) {

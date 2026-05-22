@@ -208,6 +208,24 @@ input:focus { outline: none; border-color: var(--accent); }
 .hud-pill.timer { color: var(--warn); font-family: ui-monospace, monospace; }
 .hud-pill.role-shooter { color: var(--shooter); }
 .hud-pill.role-hider   { color: var(--hider); }
+.status-banner {
+  position: absolute; top: 90px; left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, rgba(60,40,20,0.92), rgba(40,25,10,0.92));
+  border: 1px solid rgba(255,200,80,0.35);
+  border-radius: 999px;
+  padding: 6px 22px;
+  color: #ffd86b;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  z-index: 11;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.banner-text:empty { display: none; }
+
 .hud-status {
   position: absolute; top: 48px; left: 12px; right: 12px;
   display: flex; justify-content: space-between; gap: 12px;
@@ -303,9 +321,65 @@ input:focus { outline: none; border-color: var(--accent); }
 }
 .ctrl-group { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
 .ctrl-shooter { margin-left: auto; }
+.ctrl-hider { width: 100%; justify-content: space-between; gap: 6px; }
 
 .role-shooter .ctrl-hider,
 .role-hider   .ctrl-shooter { display: none; }
+
+.action-row {
+  display: flex; gap: 6px;
+  pointer-events: auto;
+}
+.action-btn {
+  width: 50px; height: 50px;
+  border-radius: 50%;
+  border: 2px solid rgba(96,165,250,0.7);
+  background: radial-gradient(circle at 35% 30%, #4a90e2 0%, #2d6cba 60%, #1c4783 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  box-shadow:
+    0 3px 8px rgba(0,0,0,0.4),
+    0 0 0 2px rgba(255,255,255,0.08) inset;
+  transition: transform .07s, background .1s, border-color .1s;
+  font-family: inherit;
+}
+.action-btn:hover:not(:disabled) {
+  border-color: rgba(150,200,255,0.9);
+}
+.action-btn:active:not(:disabled),
+.action-btn.pressed {
+  transform: scale(0.92);
+  background: radial-gradient(circle at 35% 30%, #2d6cba 0%, #1c4783 60%, #0f2d54 100%);
+}
+.action-btn.active {
+  border-color: #ffd86b;
+  box-shadow:
+    0 0 12px rgba(255,216,107,0.55),
+    0 3px 8px rgba(0,0,0,0.4),
+    0 0 0 2px rgba(255,255,255,0.08) inset;
+}
+.arrow-btn.big {
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  font-size: 22px;
+  border: 2px solid rgba(96,165,250,0.7);
+  background: radial-gradient(circle at 35% 30%, #4a90e2 0%, #2d6cba 60%, #1c4783 100%);
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow:
+    0 3px 8px rgba(0,0,0,0.4),
+    0 0 0 2px rgba(255,255,255,0.08) inset;
+}
+.arrow-btn.big.pressed,
+.arrow-btn.big:active:not(:disabled) {
+  background: radial-gradient(circle at 35% 30%, #2d6cba 0%, #1c4783 60%, #0f2d54 100%);
+  transform: scale(0.92);
+}
 
 .ctrl-btn {
   background: linear-gradient(to bottom, rgba(54,54,60,0.78), rgba(22,22,26,0.85));
@@ -388,18 +462,27 @@ input:focus { outline: none; border-color: var(--accent); }
   font-size: 18px;
 }
 
+@media (max-width: 500px) {
+  .action-btn { width: 42px; height: 42px; font-size: 13px; }
+  .arrow-btn.big { width: 50px; height: 50px; font-size: 18px; }
+  .action-row { gap: 4px; }
+}
 @media (max-height: 700px) {
   .ctrl-btn { width: 40px; height: 40px; font-size: 15px; }
   .dpad { grid-template-columns: 40px 40px 40px; grid-template-rows: 40px 40px 40px; gap: 2px; }
   .fire-btn { width: 60px; height: 60px; font-size: 13px; }
   .controls { padding: 6px 10px max(8px, env(safe-area-inset-bottom)); }
   .posture-btn { padding: 0 12px; font-size: 12px; }
+  .action-btn { width: 42px; height: 42px; font-size: 13px; }
+  .arrow-btn.big { width: 50px; height: 50px; font-size: 18px; }
 }
 @media (max-height: 540px) {
   .ctrl-btn { width: 36px; height: 36px; font-size: 13px; }
   .dpad { grid-template-columns: 36px 36px 36px; grid-template-rows: 36px 36px 36px; gap: 1px; }
   .fire-btn { width: 52px; height: 52px; font-size: 11px; }
   .controls { padding: 4px 8px max(6px, env(safe-area-inset-bottom)); }
+  .action-btn { width: 38px; height: 38px; font-size: 12px; }
+  .arrow-btn.big { width: 46px; height: 46px; font-size: 16px; }
 }
 
 /* ── Orientation hint ── */

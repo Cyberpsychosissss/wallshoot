@@ -73,16 +73,26 @@ export function attachButtonInput({ sendInput, getState }) {
   bindHold(document.getElementById("btn-move-right"),
     () => sendInput({ move: 1 }),
     () => sendInput({ move: 0 }));
-  bindTap(document.getElementById("btn-posture"),
-    () => {
-      const state = getState();
-      if (!state) return;
-      const me = state.players[state.viewerIdx];
-      const next = me.posture === "stand" ? "crouch"
-                : me.posture === "crouch" ? "prone"
-                : "stand";
-      sendInput({ posture: next });
-    });
+  // Three explicit posture buttons + jump / dodge actions
+  bindTap(document.getElementById("btn-stand"), () => sendInput({ posture: "stand" }));
+  bindTap(document.getElementById("btn-crouch"), () => sendInput({ posture: "crouch" }));
+  bindTap(document.getElementById("btn-prone"), () => sendInput({ posture: "prone" }));
+  bindTap(document.getElementById("btn-jump"), () => sendInput({ action: "jump" }));
+  bindTap(document.getElementById("btn-dodge"), () => {
+    const state = getState();
+    if (!state) return;
+    // Direction follows current movement input; defaults to left.
+    const me = state.players[state.viewerIdx];
+    // Last move dir is stored as moveDir on server; for local UX we look at
+    // whether the player is currently holding left or right. If neither, pick
+    // the side they're closer to the center from.
+    const heldLeft  = document.getElementById("btn-move-left")?.classList.contains("pressed");
+    const heldRight = document.getElementById("btn-move-right")?.classList.contains("pressed");
+    const dir = heldLeft ? "dodge_left"
+              : heldRight ? "dodge_right"
+              : (me.anchorCol >= 6 ? "dodge_left" : "dodge_right");
+    sendInput({ action: dir });
+  });
 
   // Keyboard fallback for desktop power users (optional convenience).
   let downKeys = new Set();
@@ -103,12 +113,12 @@ export function attachButtonInput({ sendInput, getState }) {
     } else {
       if (k === "KeyA" || k === "ArrowLeft") sendInput({ move: down ? -1 : 0 });
       else if (k === "KeyD" || k === "ArrowRight") sendInput({ move: down ? 1 : 0 });
-      else if (down && (k === "KeyS" || k === "Space")) {
-        const me = state.players[state.viewerIdx];
-        const next = me.posture === "stand" ? "crouch"
-                  : me.posture === "crouch" ? "prone"
-                  : "stand";
-        sendInput({ posture: next });
+      else if (down && k === "KeyW") sendInput({ posture: "stand" });
+      else if (down && k === "KeyS") sendInput({ posture: "crouch" });
+      else if (down && k === "KeyZ") sendInput({ posture: "prone" });
+      else if (down && k === "Space") sendInput({ action: "jump" });
+      else if (down && (k === "KeyQ" || k === "KeyE")) {
+        sendInput({ action: k === "KeyQ" ? "dodge_left" : "dodge_right" });
       }
     }
   };

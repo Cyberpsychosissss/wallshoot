@@ -7,6 +7,8 @@ import {
   AIM_MAX_COL,
   AIM_MIN_ROW,
   AIM_MAX_ROW,
+  JUMP_DURATION_MS,
+  DODGE_DURATION_MS,
 } from "./constants.js";
 import { settings } from "./settings.js";
 import { createWall, seedInitialHoles, wallToBase64, breakArea } from "./wall.js";
@@ -45,8 +47,8 @@ export function createGame({ playerAId, playerBId }) {
     shooterIdx: 0,
     // per-player live state
     players: [
-      { id: playerAId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 } },
-      { id: playerBId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 } },
+      { id: playerAId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 }, action: null, actionStart: 0, actionDuration: 0 },
+      { id: playerBId, hp: settings.INITIAL_HP, posture: "stand", anchorCol: 6, moveDir: 0, ammo: 0, aim: { col: 6, row: 6 }, aimDir: { col: 0, row: 0 }, action: null, actionStart: 0, actionDuration: 0 },
     ],
     wall: createWall(),
     events: [], // transient events emitted this tick (sounds, hit flashes)
@@ -75,10 +77,12 @@ function startRound(state) {
   state.players[1].posture = "stand";
   state.players[0].anchorCol = 6;
   state.players[1].anchorCol = 6;
-  state.players[0].aim = { col: 6, row: 12 };
-  state.players[1].aim = { col: 6, row: 12 };
+  state.players[0].aim = { col: 6, row: 6 };
+  state.players[1].aim = { col: 6, row: 6 };
   state.players[0].aimDir = { col: 0, row: 0 };
   state.players[1].aimDir = { col: 0, row: 0 };
+  state.players[0].action = null;
+  state.players[1].action = null;
   state.players[state.shooterIdx].ammo = settings.BULLETS_PER_TURN;
   state.players[1 - state.shooterIdx].ammo = 0;
   state.wall = createWall();
@@ -105,6 +109,7 @@ export function resetPlayerInput(state, playerIdx) {
   if (!p) return;
   p.moveDir = 0;
   if (p.aimDir) { p.aimDir.col = 0; p.aimDir.row = 0; }
+  p.action = null;
 }
 
 export function applyInput(state, playerIdx, input) {
@@ -136,8 +141,19 @@ export function applyInput(state, playerIdx, input) {
     if (typeof input.move === "number") {
       p.moveDir = clamp(input.move, -1, 1);
     }
-    if (typeof input.posture === "string" && POSTURE_NAMES.includes(input.posture)) {
+    if (typeof input.posture === "string" && POSTURE_NAMES.includes(input.posture) && !p.action) {
       p.posture = input.posture;
+    }
+    if (typeof input.action === "string" && !p.action) {
+      let dur = 0;
+      if (input.action === "jump") dur = JUMP_DURATION_MS;
+      else if (input.action === "dodge_left" || input.action === "dodge_right") dur = DODGE_DURATION_MS;
+      if (dur > 0) {
+        p.action = input.action;
+        p.actionStart = state.tick * TICK_INTERVAL_MS;
+        p.actionDuration = dur;
+        state.events.push({ t: "action_start", playerIdx, action: input.action });
+      }
     }
   }
 }
@@ -164,7 +180,7 @@ function doFire(state) {
     state.events.push({ t: "wall_break", col, row, broken });
   } else {
     // Already a hole — bullet passes through; check hider hitbox at this cell.
-    const part = hitTest(col, row, hider.anchorCol, hider.posture);
+    const part = hitTest(col, row, hider.anchorCol, hider.posture, hider.action, actionProgress(hider, state));
     if (part) {
       const dmg = part === "head" ? settings.DMG_HEAD : part === "torso" ? settings.DMG_TORSO : settings.DMG_LIMB;
       hider.hp = Math.max(0, hider.hp - dmg);
@@ -228,8 +244,27 @@ function startNextRound(state) {
   startRound(state);
 }
 
+function actionProgress(p, state) {
+  if (!p.action) return 0;
+  const elapsed = state.tick * TICK_INTERVAL_MS - p.actionStart;
+  return Math.max(0, Math.min(1, elapsed / p.actionDuration));
+}
+
 export function tick(state) {
   state.tick += 1;
+
+  // Expire actions
+  for (let i = 0; i < 2; i++) {
+    const p = state.players[i];
+    if (p.action) {
+      const elapsed = state.tick * TICK_INTERVAL_MS - p.actionStart;
+      if (elapsed >= p.actionDuration) {
+        p.action = null;
+        p.actionStart = 0;
+        p.actionDuration = 0;
+      }
+    }
+  }
 
   // Hider drift movement
   for (let i = 0; i < 2; i++) {
@@ -318,6 +353,8 @@ export function serializeForClient(state, viewerIdx) {
         anchorCol: state.players[0].anchorCol,
         posture: state.players[0].posture,
         aim: state.players[0].aim,
+        action: state.players[0].action,
+        actionProgress: actionProgress(state.players[0], state),
       },
       {
         hp: state.players[1].hp,
@@ -325,6 +362,8 @@ export function serializeForClient(state, viewerIdx) {
         anchorCol: state.players[1].anchorCol,
         posture: state.players[1].posture,
         aim: state.players[1].aim,
+        action: state.players[1].action,
+        actionProgress: actionProgress(state.players[1], state),
       },
     ],
     wall: wallToBase64(state.wall),

@@ -1,4 +1,12 @@
-// Mirror of server/stickman.js — keep these in sync. Grid is 12 cols × 12 rows.
+// Cartoon-style renderer:
+//  - 12×12 brick wall in the middle ground
+//  - Chunky alien-style characters (round head, round body, stubby legs)
+//  - Isometric-ish floor + decorative pillars to flesh out the scene
+//  - For the shooter, the screen is wrapped in a sniper-scope vignette
+//    centered on the aim reticle, with a crosshair overlay.
+//
+// Mirror of server/stickman.js — keep posture blocks identical.
+
 const POSTURE_BLOCKS = {
   stand: [
     { rows: [0, 1], cols: [-1, 1], part: "head" },
@@ -17,14 +25,44 @@ const POSTURE_BLOCKS = {
   ],
 };
 
-function bodyCellsAt(anchorCol, posture) {
+function actionShift(action, progress) {
+  if (!action) return { rowShift: 0, colShift: 0, pixelDy: 0, pixelDx: 0 };
+  if (action === "jump") {
+    return {
+      rowShift: -Math.round(Math.sin(progress * Math.PI) * 4),
+      colShift: 0,
+      pixelDy: -Math.sin(progress * Math.PI) * 48,
+      pixelDx: 0,
+    };
+  }
+  if (action === "dodge_left") {
+    return {
+      rowShift: 0,
+      colShift: -Math.round(Math.sin(progress * Math.PI) * 3),
+      pixelDy: 0,
+      pixelDx: -Math.sin(progress * Math.PI) * 36,
+    };
+  }
+  if (action === "dodge_right") {
+    return {
+      rowShift: 0,
+      colShift: Math.round(Math.sin(progress * Math.PI) * 3),
+      pixelDy: 0,
+      pixelDx: Math.sin(progress * Math.PI) * 36,
+    };
+  }
+  return { rowShift: 0, colShift: 0, pixelDy: 0, pixelDx: 0 };
+}
+
+function bodyCellsAt(anchorCol, posture, action, progress) {
   const blocks = POSTURE_BLOCKS[posture] || POSTURE_BLOCKS.stand;
+  const { rowShift, colShift } = actionShift(action, progress);
   const out = [];
   const anchor = Math.round(anchorCol);
   for (const b of blocks) {
     for (let r = b.rows[0]; r <= b.rows[1]; r++) {
       for (let dc = b.cols[0]; dc <= b.cols[1]; dc++) {
-        out.push({ col: anchor + dc, row: r, part: b.part });
+        out.push({ col: anchor + dc + colShift, row: r + rowShift, part: b.part });
       }
     }
   }
@@ -32,9 +70,14 @@ function bodyCellsAt(anchorCol, posture) {
 }
 
 const PART_FILLS = {
-  head: "#ffb59a",
-  torso: "#3a5fa0",
-  limb: "#2c4373",
+  head: "#86d985",
+  torso: "#4caf50",
+  limb: "#388e3c",
+};
+
+const CHARACTER = {
+  shooter: { body: "#e57373", outline: "#5a1818", face: "#ffccbc", eye: "#1a1a1a" },
+  hider:   { body: "#7cd97a", outline: "#1f5a1f", face: "#c8e6c9", eye: "#1a1a1a" },
 };
 
 export function createRenderer(canvas) {
@@ -52,24 +95,18 @@ export function createRenderer(canvas) {
   resize();
   window.addEventListener("resize", resize);
 
-  // ── Compute wall placement for the current viewer ─────────────────────
-  // The "core" 12×12 grid is the playable area. Decorative bricks extend
-  // both sides off-screen so the wall feels long. Vertical position differs
-  // between shooter (far / small) and hider (close / large).
   function wallLayout(state) {
     const W = canvas.clientWidth, H = canvas.clientHeight;
     const isShooter = state.isShooterView;
-    // Target wall dimensions by both height *and* width — pick whichever
-    // is smaller so the wall always fits (especially in portrait).
     let targetH, targetWFrac, topYFrac;
     if (isShooter) {
-      targetH = H * 0.22;
-      targetWFrac = 0.55;   // shooter wall stays narrow even on wide screens
-      topYFrac = 0.38;
+      targetH = H * 0.30;
+      targetWFrac = 0.50;
+      topYFrac = 0.32;
     } else {
-      targetH = H * 0.58;
-      targetWFrac = 0.85;   // hider wall fills most of the width
-      topYFrac = 0.30;
+      targetH = H * 0.55;
+      targetWFrac = 0.85;
+      topYFrac = 0.26;
     }
     const cellByH = targetH / 12;
     const cellByW = (W * targetWFrac) / 12;
@@ -98,7 +135,6 @@ export function createRenderer(canvas) {
     lastState = state;
     const W = canvas.clientWidth, H = canvas.clientHeight;
 
-    // ── Background: sky + ground ──
     drawBackdrop(state, W, H);
 
     const L = wallLayout(state);
@@ -106,24 +142,32 @@ export function createRenderer(canvas) {
     const oppIdx = 1 - state.viewerIdx;
     const opp = state.players[oppIdx];
 
-    // ── Opponent silhouette (hider only — sees the shooter in the distance) ──
+    drawFloor(L, state);
+    drawPillars(L, state);
+
     if (!state.isShooterView && (state.phase === "battle" || state.phase === "prep")) {
       drawDistantShooter(L, opp, state);
     }
 
-    // ── The wall (core bricks + decorative side bricks) ──
     drawWall(L, wallData, state);
 
-    // ── Laser dot on the wall + shooter's beam ──
     if (state.phase === "battle" || state.phase === "prep") {
       const shooter = state.players[state.shooterIdx];
       drawLaser(L, shooter, state);
     }
 
-    // ── Self stickman (back view, foreground) ──
-    drawSelfStickman(L, state);
+    drawSelfCharacter(L, state);
 
-    // ── Prep overlay for shooter only ──
+    // Shooter sees the world through a sniper scope
+    if (state.isShooterView && state.phase === "battle") {
+      const shooter = state.players[state.shooterIdx];
+      const { cellW, cellH, wallLeftX, wallTopY } = L;
+      const reticleX = wallLeftX + (shooter.aim.col + 0.5) * cellW;
+      const reticleY = wallTopY + (shooter.aim.row + 0.5) * cellH;
+      drawScopeVignette(W, H, reticleX, reticleY);
+      drawCrosshair(reticleX, reticleY, Math.min(W, H) * 0.30);
+    }
+
     if (state.phase === "prep" && state.isShooterView) {
       ctx.fillStyle = "rgba(0,0,0,0.7)";
       ctx.fillRect(0, 0, W, H);
@@ -139,46 +183,89 @@ export function createRenderer(canvas) {
     }
   }
 
-  // ── Drawing helpers ───────────────────────────────────────────────────
+  // ── Backdrop / scene ───────────────────────────────────────────────────
 
   function drawBackdrop(state, W, H) {
-    // Sky gradient
-    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.7);
-    sky.addColorStop(0, "#0c1218");
-    sky.addColorStop(0.6, "#1a2330");
-    sky.addColorStop(1, "#2a2620");
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H);
-    // Ground
-    const ground = ctx.createLinearGradient(0, H * 0.7, 0, H);
-    ground.addColorStop(0, "#1f1a16");
-    ground.addColorStop(1, "#0a0807");
-    ctx.fillStyle = ground;
-    ctx.fillRect(0, H * 0.7, W, H * 0.3);
-    // Distant horizon line — sits where the wall meets the ground in the
-    // shooter view (perspective hint)
-    const horizonY = state.isShooterView ? H * 0.50 : H * 0.32;
-    ctx.strokeStyle = "rgba(120,80,60,0.35)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, horizonY);
-    ctx.lineTo(W, horizonY);
-    ctx.stroke();
+    // Indoor blue room palette
+    const wallY = state.isShooterView ? H * 0.32 : H * 0.26;
+    // Sky / back wall
+    const back = ctx.createLinearGradient(0, 0, 0, wallY + 40);
+    back.addColorStop(0, "#1c3a5c");
+    back.addColorStop(1, "#2c4f72");
+    ctx.fillStyle = back;
+    ctx.fillRect(0, 0, W, wallY + 40);
+    // Floor
+    const floor = ctx.createLinearGradient(0, wallY + 40, 0, H);
+    floor.addColorStop(0, "#1a2a3a");
+    floor.addColorStop(0.5, "#28384a");
+    floor.addColorStop(1, "#0d141c");
+    ctx.fillStyle = floor;
+    ctx.fillRect(0, wallY + 40, W, H);
   }
+
+  function drawFloor(L, state) {
+    const { W, H, wallBottomY } = L;
+    // Floor tile grid — perspective lines converging toward image center
+    const cx = W / 2;
+    const vanishingY = L.wallTopY - 40;
+    ctx.strokeStyle = "rgba(140,180,210,0.18)";
+    ctx.lineWidth = 1;
+    // Vertical converging lines
+    const lanes = 8;
+    for (let i = -lanes; i <= lanes; i++) {
+      const t = i / lanes;
+      const xBottom = cx + t * W * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(xBottom, H);
+      ctx.lineTo(cx + t * W * 0.15, vanishingY);
+      ctx.stroke();
+    }
+    // Horizontal floor bands (closer rows farther apart)
+    for (let i = 1; i <= 8; i++) {
+      const t = 1 - 1 / (1 + i * 0.7);
+      const y = vanishingY + (H - vanishingY) * t;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+  }
+
+  function drawPillars(L, state) {
+    const { W, H } = L;
+    // Two pillars flanking the wall
+    const pillarBaseY = L.wallTopY - 12;
+    const pillarBottomY = H * 0.88;
+    const xs = [L.wallLeftX - W * 0.10, L.wallRightX + W * 0.10];
+    for (const xc of xs) {
+      const w = Math.max(28, W * 0.04);
+      ctx.fillStyle = "#3a5778";
+      ctx.fillRect(xc - w / 2, pillarBaseY - 30, w, pillarBottomY - pillarBaseY + 30);
+      ctx.fillStyle = "#2a4060";
+      ctx.fillRect(xc - w / 2, pillarBaseY - 30, w * 0.30, pillarBottomY - pillarBaseY + 30);
+      ctx.strokeStyle = "#0c1a2a";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(xc - w / 2, pillarBaseY - 30, w, pillarBottomY - pillarBaseY + 30);
+      // Top cap
+      ctx.fillStyle = "#4a6790";
+      ctx.fillRect(xc - w / 2 - 4, pillarBaseY - 38, w + 8, 10);
+      ctx.strokeRect(xc - w / 2 - 4, pillarBaseY - 38, w + 8, 10);
+    }
+  }
+
+  // ── Wall ──────────────────────────────────────────────────────────────
 
   function drawWall(L, wallData, state) {
     const { cellW, cellH, wallLeftX, wallTopY, W } = L;
     const coreCols = 12, coreRows = 12;
-    // Decorative bricks on each side — enough to cover the canvas.
     const sideColsNeeded = Math.ceil((wallLeftX / cellW)) + 2;
 
     for (let r = 0; r < coreRows; r++) {
-      // Running bond: every other row offset by half a brick width.
       const offset = (r % 2 === 0) ? 0 : cellW * 0.5;
       for (let c = -sideColsNeeded; c < coreCols + sideColsNeeded; c++) {
         const x = wallLeftX + c * cellW + offset;
         const y = wallTopY + r * cellH;
-        if (x + cellW < -2 || x > W + 2) continue; // skip way off-screen
+        if (x + cellW < -2 || x > W + 2) continue;
         const isDecorative = c < 0 || c >= coreCols;
         const isHole = !isDecorative && wallData[r * coreCols + c] === 1;
         if (isHole) {
@@ -188,74 +275,43 @@ export function createRenderer(canvas) {
         }
       }
     }
-
-    // Subtle vignette on the decorative edges so the wall fades into distance
-    const fadeW = Math.min(L.wallLeftX, 120);
-    if (fadeW > 0) {
-      const lg = ctx.createLinearGradient(0, 0, fadeW, 0);
-      lg.addColorStop(0, "rgba(8,10,14,0.7)");
-      lg.addColorStop(1, "rgba(8,10,14,0)");
-      ctx.fillStyle = lg;
-      ctx.fillRect(0, wallTopY - 4, fadeW, cellH * coreRows + 8);
-      const rg = ctx.createLinearGradient(W - fadeW, 0, W, 0);
-      rg.addColorStop(0, "rgba(8,10,14,0)");
-      rg.addColorStop(1, "rgba(8,10,14,0.7)");
-      ctx.fillStyle = rg;
-      ctx.fillRect(W - fadeW, wallTopY - 4, fadeW, cellH * coreRows + 8);
-    }
   }
 
   function drawBrick(x, y, w, h, col, row, decorative) {
-    // Deterministic per-brick colour jitter — keeps the wall lively
-    // without changing every frame.
     const seed = ((col * 73856093) ^ (row * 19349663)) >>> 0;
-    const jitter = ((seed % 17) - 8); // -8..+8
-    const baseL = decorative ? 28 : 36;
-    const L = Math.max(18, Math.min(58, baseL + jitter * 0.6));
-    const H = 14 + ((seed >>> 4) % 8); // hue 14..22
-    const S = 28 + ((seed >>> 8) % 14); // sat 28..42
+    const jitter = ((seed % 17) - 8);
+    const baseL = decorative ? 32 : 42;
+    const L = Math.max(20, Math.min(62, baseL + jitter * 0.6));
+    const H = 14 + ((seed >>> 4) % 8);
+    const S = 26 + ((seed >>> 8) % 14);
     ctx.fillStyle = `hsl(${H},${S}%,${L}%)`;
     ctx.fillRect(x, y, w, h);
-    // Highlight (top edge)
-    ctx.fillStyle = `hsla(${H},${S}%,${Math.min(80, L + 18)}%,0.35)`;
-    ctx.fillRect(x, y, w, Math.max(1, h * 0.12));
-    // Shadow (bottom edge)
-    ctx.fillStyle = `hsla(${H},${S}%,${Math.max(8, L - 16)}%,0.4)`;
-    ctx.fillRect(x, y + h - Math.max(1, h * 0.12), w, Math.max(1, h * 0.12));
-    // Mortar lines (left + top)
+    ctx.fillStyle = `hsla(${H},${S}%,${Math.min(80, L + 14)}%,0.35)`;
+    ctx.fillRect(x, y, w, Math.max(1, h * 0.14));
+    ctx.fillStyle = `hsla(${H},${S}%,${Math.max(8, L - 18)}%,0.45)`;
+    ctx.fillRect(x, y + h - Math.max(1, h * 0.14), w, Math.max(1, h * 0.14));
     ctx.fillStyle = "rgba(220,210,200,0.18)";
     ctx.fillRect(x, y, w, 1);
     ctx.fillRect(x, y, 1, h);
   }
 
   function drawHole(x, y, w, h, col, row, state) {
-    // For shooter view, holes peer onto open ground / nothing (the hider is
-    // pressed flat against the far side, can't be seen even through the hole
-    // unless aim aligns with their body — which the brick hit-test already
-    // handles via wall data). Render holes as dark, jagged rim.
-    const isShooter = state.isShooterView;
-    // Background through the hole
-    if (isShooter) {
+    if (state.isShooterView) {
       ctx.fillStyle = "#06080a";
       ctx.fillRect(x, y, w, h);
     } else {
-      // For hider, a hole reveals the shooter side — slightly lighter
-      // (distant outdoor light)
-      ctx.fillStyle = "#1c2530";
+      ctx.fillStyle = "#1c2a3a";
       ctx.fillRect(x, y, w, h);
-      // Show the opponent's silhouette through this hole if aligned
       const opp = state.players[state.shooterIdx];
-      const cells = bodyCellsAt(opp.anchorCol, opp.posture);
+      const cells = bodyCellsAt(opp.anchorCol, opp.posture, opp.action, opp.actionProgress);
       const match = cells.find((p) => p.col === col && p.row === row);
       if (match) {
         ctx.fillStyle = PART_FILLS[match.part];
         ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
       }
     }
-    // Jagged rim — random offsets to suggest broken brick edges
     ctx.strokeStyle = "rgba(60,40,30,0.85)";
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
     const seed = ((col * 73856093) ^ (row * 19349663)) >>> 0;
     const offsets = [
       [(seed % 5) - 2, ((seed >>> 4) % 5) - 2],
@@ -263,6 +319,7 @@ export function createRenderer(canvas) {
       [((seed >>> 16) % 5) - 2, ((seed >>> 20) % 5) - 2],
       [((seed >>> 24) % 5) - 2, ((seed >>> 2) % 5) - 2],
     ];
+    ctx.beginPath();
     ctx.moveTo(x + offsets[0][0], y + offsets[0][1]);
     ctx.lineTo(x + w + offsets[1][0], y + offsets[1][1]);
     ctx.lineTo(x + w + offsets[2][0], y + h + offsets[2][1]);
@@ -271,83 +328,152 @@ export function createRenderer(canvas) {
     ctx.stroke();
   }
 
-  function drawDistantShooter(L, shooter, state) {
-    // Render the shooter as a small silhouette above the wall — distant.
-    const { W, H } = L;
-    const cx = W / 2 + (shooter.aim.col - 6) * 6; // shooter aim shifts position slightly
-    const baseY = L.wallTopY - 4;
-    const scale = 0.55;
+  // ── Characters ────────────────────────────────────────────────────────
+
+  function drawCharacterAt(cx, baseY, scale, posture, action, actionProgress, tint) {
+    const shift = actionShift(action, actionProgress);
     ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = "#1a1a1a";
-    ctx.strokeStyle = "#cc4444";
-    ctx.lineWidth = 2;
-    const bodyH = 56 * scale;
-    const headR = 11 * scale;
-    // legs
+    ctx.translate(cx + shift.pixelDx, baseY + shift.pixelDy);
+
+    if (posture === "prone") {
+      // Lying flat — a pill-shaped body
+      ctx.fillStyle = tint.body;
+      ctx.strokeStyle = tint.outline;
+      ctx.lineWidth = 2.5 * scale;
+      ctx.beginPath();
+      ctx.ellipse(0, -10 * scale, 42 * scale, 13 * scale, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      // Head bump
+      ctx.fillStyle = tint.face;
+      ctx.beginPath();
+      ctx.arc(-32 * scale, -12 * scale, 13 * scale, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      // Eyes
+      ctx.fillStyle = tint.eye;
+      ctx.beginPath();
+      ctx.arc(-37 * scale, -14 * scale, 2.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-27 * scale, -14 * scale, 2.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    let bodyW, bodyH, headR, gap;
+    if (posture === "crouch") {
+      bodyW = 26 * scale; bodyH = 28 * scale; headR = 18 * scale; gap = 6 * scale;
+    } else {
+      bodyW = 24 * scale; bodyH = 42 * scale; headR = 20 * scale; gap = 8 * scale;
+    }
+
+    // Legs (squat ovals at the bottom)
+    ctx.fillStyle = tint.outline;
     ctx.beginPath();
-    ctx.moveTo(cx, baseY);
-    ctx.lineTo(cx - 8 * scale, baseY - bodyH * 0.4);
-    ctx.moveTo(cx, baseY);
-    ctx.lineTo(cx + 8 * scale, baseY - bodyH * 0.4);
-    ctx.stroke();
-    // torso
-    ctx.beginPath();
-    ctx.moveTo(cx, baseY - bodyH * 0.4);
-    ctx.lineTo(cx, baseY - bodyH);
-    ctx.stroke();
-    // head
-    ctx.beginPath();
-    ctx.arc(cx, baseY - bodyH - headR, headR, 0, Math.PI * 2);
-    ctx.fillStyle = "#cc4444";
+    ctx.ellipse(-bodyW * 0.4, -5 * scale, 6 * scale, 12 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(bodyW * 0.4, -5 * scale, 6 * scale, 12 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = tint.body;
+    ctx.strokeStyle = tint.outline;
+    ctx.lineWidth = 2.5 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, -bodyH / 2 - 8 * scale, bodyW, bodyH / 2, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Arms (two short ovals on the sides)
+    ctx.fillStyle = tint.body;
+    ctx.beginPath();
+    ctx.ellipse(-bodyW * 0.95, -bodyH / 2 - 4 * scale, 5 * scale, 14 * scale, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(bodyW * 0.95, -bodyH / 2 - 4 * scale, 5 * scale, 14 * scale, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Head (round, sits on body)
+    const headY = -bodyH - gap - headR;
+    ctx.fillStyle = tint.face;
+    ctx.beginPath();
+    ctx.arc(0, headY, headR, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle = tint.eye;
+    ctx.beginPath();
+    ctx.arc(-headR * 0.35, headY - 2 * scale, 2.6 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(headR * 0.35, headY - 2 * scale, 2.6 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    // Smirk
+    ctx.strokeStyle = tint.eye;
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.arc(0, headY + 4 * scale, 4 * scale, 0, Math.PI);
     ctx.stroke();
-    // gun
-    ctx.fillStyle = "#333";
-    ctx.fillRect(cx + 8 * scale, baseY - bodyH + 4 * scale, 16 * scale, 4 * scale);
+
     ctx.restore();
   }
+
+  function drawSelfCharacter(L, state) {
+    const { W, H } = L;
+    const me = state.players[state.viewerIdx];
+    const isShooter = state.isShooterView;
+    const cx = W / 2;
+    const baseY = H * 0.94;
+    const scale = isShooter ? 1.5 : 1.7;
+    const tint = isShooter ? CHARACTER.shooter : CHARACTER.hider;
+    drawCharacterAt(cx, baseY, scale, me.posture, me.action, me.actionProgress, tint);
+
+    // Gun for shooter (over right shoulder)
+    if (isShooter && me.posture !== "prone") {
+      ctx.save();
+      ctx.translate(cx + 22 * scale, baseY - 42 * scale);
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(0, 0, 30 * scale, 6 * scale);
+      ctx.fillStyle = "#222";
+      ctx.fillRect(26 * scale, -2 * scale, 4 * scale, 10 * scale);
+      ctx.restore();
+    }
+  }
+
+  function drawDistantShooter(L, shooter, state) {
+    const cx = L.W / 2 + (shooter.aim.col - 6) * 4;
+    const baseY = L.wallTopY - 8;
+    const scale = 0.55;
+    drawCharacterAt(cx, baseY, scale, "stand", null, 0, CHARACTER.shooter);
+    // Tiny gun in the distance
+    ctx.fillStyle = "#222";
+    ctx.fillRect(cx + 10 * scale, baseY - 32 * scale, 14 * scale, 3 * scale);
+  }
+
+  // ── Laser ─────────────────────────────────────────────────────────────
 
   function drawLaser(L, shooter, state) {
     const { cellW, cellH, wallLeftX, wallTopY } = L;
     const aimX = wallLeftX + (shooter.aim.col + 0.5) * cellW;
     const aimY = wallTopY + (shooter.aim.row + 0.5) * cellH;
-    // Glow halo
-    const halo = ctx.createRadialGradient(aimX, aimY, 0, aimX, aimY, Math.max(cellW, cellH) * 1.3);
-    halo.addColorStop(0, "rgba(255,40,40,0.85)");
-    halo.addColorStop(0.5, "rgba(255,40,40,0.35)");
-    halo.addColorStop(1, "rgba(255,40,40,0)");
-    ctx.fillStyle = halo;
-    ctx.fillRect(aimX - cellW * 2, aimY - cellH * 2, cellW * 4, cellH * 4);
-    // Bright core
-    ctx.fillStyle = "#ff1f1f";
-    ctx.beginPath();
-    ctx.arc(aimX, aimY, Math.min(cellW, cellH) * 0.22, 0, Math.PI * 2);
-    ctx.fill();
 
     if (state.phase === "battle") {
-      // Solid laser line — visible to both sides. Shooter sees it from
-      // their muzzle; hider sees the same beam shooting toward the wall
-      // dot from where the distant shooter silhouette is drawn.
       const muzzle = state.isShooterView
-        ? { x: L.W / 2 + 30, y: L.H * 0.78 }
+        ? { x: L.W / 2 + 40, y: L.H * 0.78 }
         : muzzleFromDistantShooter(L, state);
-      // Outer glow
-      ctx.strokeStyle = "rgba(255,40,40,0.35)";
+      ctx.strokeStyle = "rgba(255,40,40,0.4)";
       ctx.lineWidth = 7;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(muzzle.x, muzzle.y);
       ctx.lineTo(aimX, aimY);
       ctx.stroke();
-      // Inner bright core
       ctx.strokeStyle = "rgba(255,80,80,0.95)";
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(muzzle.x, muzzle.y);
       ctx.lineTo(aimX, aimY);
       ctx.stroke();
-      // White hot center streak
       ctx.strokeStyle = "rgba(255,220,220,0.85)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -356,65 +482,67 @@ export function createRenderer(canvas) {
       ctx.stroke();
       ctx.lineCap = "butt";
     }
+
+    // Bright dot on the wall (visible to both sides)
+    const halo = ctx.createRadialGradient(aimX, aimY, 0, aimX, aimY, Math.max(cellW, cellH) * 1.3);
+    halo.addColorStop(0, "rgba(255,40,40,0.85)");
+    halo.addColorStop(0.5, "rgba(255,40,40,0.35)");
+    halo.addColorStop(1, "rgba(255,40,40,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(aimX - cellW * 2, aimY - cellH * 2, cellW * 4, cellH * 4);
+    ctx.fillStyle = "#ff1f1f";
+    ctx.beginPath();
+    ctx.arc(aimX, aimY, Math.min(cellW, cellH) * 0.22, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   function muzzleFromDistantShooter(L, state) {
-    const { W } = L;
     const shooter = state.players[state.shooterIdx];
-    const cx = W / 2 + (shooter.aim.col - 6) * 6;
-    const baseY = L.wallTopY - 4;
-    const scale = 0.55;
-    const bodyH = 56 * scale;
-    return { x: cx + 16 * scale, y: baseY - bodyH + 4 * scale };
+    const cx = L.W / 2 + (shooter.aim.col - 6) * 4;
+    const baseY = L.wallTopY - 8;
+    return { x: cx + 16 * 0.55, y: baseY - 28 };
   }
 
-  function drawSelfStickman(L, state) {
-    const { W, H } = L;
-    const me = state.players[state.viewerIdx];
-    const isShooter = state.isShooterView;
-    const cx = W / 2;
-    const baseY = H * 0.97;
-    const scale = isShooter ? 1.4 : 1.55;
-    const tintStroke = isShooter ? "#ff5252" : "#4fc3f7";
-    const tintFill   = isShooter ? "#7a1f1f" : "#1e4d63";
-    ctx.strokeStyle = tintStroke;
-    ctx.fillStyle = tintFill;
-    ctx.lineWidth = 3 * scale;
+  // ── Sniper scope vignette (shooter only) ──────────────────────────────
 
-    if (me.posture === "prone") {
-      ctx.beginPath();
-      ctx.ellipse(cx, baseY - 10 * scale, 70 * scale, 14 * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      return;
-    }
-    const bodyH = me.posture === "crouch" ? 60 * scale : 90 * scale;
-    const headR = 17 * scale;
-    const shoulderY = baseY - bodyH;
-    // legs
+  function drawScopeVignette(W, H, cx, cy) {
+    const innerR = Math.min(W, H) * 0.28;
+    const outerR = Math.max(W, H);
+    const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, outerR);
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(0.4, "rgba(0,0,0,0.55)");
+    grad.addColorStop(0.9, "rgba(0,0,0,0.92)");
+    grad.addColorStop(1, "rgba(0,0,0,0.96)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    // Scope ring outline
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(cx, baseY);
-    ctx.lineTo(cx - 14 * scale, baseY - bodyH * 0.4);
-    ctx.moveTo(cx, baseY);
-    ctx.lineTo(cx + 14 * scale, baseY - bodyH * 0.4);
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
     ctx.stroke();
-    // torso
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(cx, baseY - bodyH * 0.4);
-    ctx.lineTo(cx, shoulderY);
+    ctx.arc(cx, cy, innerR - 1, 0, Math.PI * 2);
     ctx.stroke();
-    // head
+  }
+
+  function drawCrosshair(cx, cy, radius) {
+    ctx.strokeStyle = "rgba(255,30,30,0.85)";
+    ctx.lineWidth = 1.5;
+    const gap = 8;
+    const arm = radius * 0.5;
     ctx.beginPath();
-    ctx.arc(cx, shoulderY - headR, headR, 0, Math.PI * 2);
+    ctx.moveTo(cx - arm, cy); ctx.lineTo(cx - gap, cy);
+    ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + arm, cy);
+    ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy - gap);
+    ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + arm);
+    ctx.stroke();
+    ctx.fillStyle = "#ff3030";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
-    // gun for shooter
-    if (isShooter) {
-      ctx.fillStyle = "#444";
-      ctx.fillRect(cx + 14 * scale, shoulderY + 4 * scale, 28 * scale, 6 * scale);
-      ctx.fillStyle = "#222";
-      ctx.fillRect(cx + 38 * scale, shoulderY + 2 * scale, 4 * scale, 10 * scale);
-    }
   }
 
   return {

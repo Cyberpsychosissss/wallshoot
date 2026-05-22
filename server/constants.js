@@ -35,6 +35,12 @@ export const SPLASH_RADIUS = 2;            // chebyshev distance
 export const SPLASH_BREAK_MIN = 6;
 export const SPLASH_BREAK_MAX = 8;
 
+// Timed actions — jump/dodge are short reactive moves the hider triggers.
+export const JUMP_DURATION_MS = 600;     // total airtime
+export const DODGE_DURATION_MS = 500;    // side-step duration
+export const JUMP_ROW_LIFT = 4;          // hitbox shifts up this many rows at peak
+export const DODGE_COL_SHIFT = 3;        // hitbox shifts sideways this many cols
+
 export const REPLAY_BUFFER_TICKS = 45;
 export const REPLAY_PLAYBACK_RATE = 0.5;
 

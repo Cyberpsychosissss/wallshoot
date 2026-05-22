@@ -59,26 +59,30 @@ export function createRenderer(canvas) {
   function wallLayout(state) {
     const W = canvas.clientWidth, H = canvas.clientHeight;
     const isShooter = state.isShooterView;
-    let wallH, topYFrac;
+    // Target wall dimensions by both height *and* width — pick whichever
+    // is smaller so the wall always fits (especially in portrait).
+    let targetH, targetWFrac, topYFrac;
     if (isShooter) {
-      // Far-and-small: ~22% of canvas height, sitting in the upper-middle
-      // so there's plenty of foreground room for the self stickman and HUD.
-      wallH = H * 0.22;
+      targetH = H * 0.22;
+      targetWFrac = 0.55;   // shooter wall stays narrow even on wide screens
       topYFrac = 0.38;
     } else {
-      // Close-and-large
-      wallH = H * 0.58;
+      targetH = H * 0.58;
+      targetWFrac = 0.85;   // hider wall fills most of the width
       topYFrac = 0.30;
     }
-    const cellSize = wallH / 12;
+    const cellByH = targetH / 12;
+    const cellByW = (W * targetWFrac) / 12;
+    const cellSize = Math.min(cellByH, cellByW);
     const coreW = cellSize * 12;
+    const coreH = cellSize * 12;
     const wallLeftX = (W - coreW) / 2;
     const wallTopY = H * topYFrac;
     return {
       cellW: cellSize, cellH: cellSize,
       wallLeftX, wallTopY,
       wallRightX: wallLeftX + coreW,
-      wallBottomY: wallTopY + wallH,
+      wallBottomY: wallTopY + coreH,
       W, H,
     };
   }

@@ -388,12 +388,18 @@ input:focus { outline: none; border-color: var(--accent); }
   font-size: 18px;
 }
 
-@media (max-width: 560px), (max-height: 480px) {
+@media (max-height: 700px) {
   .ctrl-btn { width: 40px; height: 40px; font-size: 15px; }
   .dpad { grid-template-columns: 40px 40px 40px; grid-template-rows: 40px 40px 40px; gap: 2px; }
   .fire-btn { width: 60px; height: 60px; font-size: 13px; }
   .controls { padding: 6px 10px max(8px, env(safe-area-inset-bottom)); }
   .posture-btn { padding: 0 12px; font-size: 12px; }
+}
+@media (max-height: 540px) {
+  .ctrl-btn { width: 36px; height: 36px; font-size: 13px; }
+  .dpad { grid-template-columns: 36px 36px 36px; grid-template-rows: 36px 36px 36px; gap: 1px; }
+  .fire-btn { width: 52px; height: 52px; font-size: 11px; }
+  .controls { padding: 4px 8px max(6px, env(safe-area-inset-bottom)); }
 }
 
 /* ── Orientation hint ── */

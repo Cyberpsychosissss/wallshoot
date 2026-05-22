@@ -3,6 +3,10 @@ import {
   TICK_RATE,
   WALL_COLS,
   WALL_ROWS,
+  AIM_MIN_COL,
+  AIM_MAX_COL,
+  AIM_MIN_ROW,
+  AIM_MAX_ROW,
 } from "./constants.js";
 import { settings } from "./settings.js";
 import { createWall, seedInitialHoles, wallToBase64, breakArea } from "./wall.js";
@@ -118,10 +122,10 @@ export function applyInput(state, playerIdx, input) {
       p.aimDir.row = clamp(input.aim_dy, -1, 1);
     }
     if (typeof input.aim_col === "number") {
-      p.aim.col = clamp(input.aim_col, 0, WALL_COLS - 1);
+      p.aim.col = clamp(input.aim_col, AIM_MIN_COL, AIM_MAX_COL);
     }
     if (typeof input.aim_row === "number") {
-      p.aim.row = clamp(input.aim_row, 0, WALL_ROWS - 1);
+      p.aim.row = clamp(input.aim_row, AIM_MIN_ROW, AIM_MAX_ROW);
     }
     if (input.fire === true) {
       doFire(state);
@@ -145,6 +149,13 @@ function doFire(state) {
   const col = Math.round(shooter.aim.col);
   const row = Math.round(shooter.aim.row);
   shooter.ammo -= 1;
+  // Aim outside the wall grid — bullet flies into the air (or past the wall
+  // entirely). No damage, no break.
+  if (col < 0 || col >= WALL_COLS || row < 0 || row >= WALL_ROWS) {
+    state.events.push({ t: "miss_air", col, row });
+    if (shooter.ammo === 0) swapShooter(state);
+    return;
+  }
   const cellIdx = row * WALL_COLS + col;
   const cellState = state.wall[cellIdx];
   if (cellState === 0) {
@@ -234,8 +245,8 @@ export function tick(state) {
   if (state.phase === PHASE.BATTLE) {
     const sh = state.players[state.shooterIdx];
     const aimSpeed = 8.0 / TICK_RATE; // ~8 cells per second
-    sh.aim.col = clamp(sh.aim.col + sh.aimDir.col * aimSpeed, 0, WALL_COLS - 1);
-    sh.aim.row = clamp(sh.aim.row + sh.aimDir.row * aimSpeed, 0, WALL_ROWS - 1);
+    sh.aim.col = clamp(sh.aim.col + sh.aimDir.col * aimSpeed, AIM_MIN_COL, AIM_MAX_COL);
+    sh.aim.row = clamp(sh.aim.row + sh.aimDir.row * aimSpeed, AIM_MIN_ROW, AIM_MAX_ROW);
   }
 
   switch (state.phase) {

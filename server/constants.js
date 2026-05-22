@@ -17,6 +17,14 @@ export const DMG_LIMB = 20;
 
 export const WALL_COLS = 12;
 export const WALL_ROWS = 12;
+
+// Aim range extends past the playable wall so the shooter can sweep their
+// laser across the surrounding view (decorative bricks / sky). Shots that
+// land outside the wall grid simply miss into the air.
+export const AIM_MIN_COL = -4;
+export const AIM_MAX_COL = WALL_COLS + 3;
+export const AIM_MIN_ROW = -5;
+export const AIM_MAX_ROW = WALL_ROWS - 1;
 export const INITIAL_HOLES_MIN = 3;
 export const INITIAL_HOLES_MAX = 5;
 export const INITIAL_HOLES_HEAD_ROW_GUARD = 3;

@@ -7,26 +7,37 @@ const HOLD_BUTTONS = []; // active hold-button bindings (for cleanup)
 
 function bindHold(btn, onDown, onUp) {
   if (!btn) return;
-  let pointerId = null;
+  let activePointer = null;
+  const release = () => {
+    if (activePointer === null) return;
+    activePointer = null;
+    btn.classList.remove("pressed");
+    onUp();
+  };
   const down = (e) => {
-    if (pointerId !== null) return;
-    pointerId = e.pointerId ?? "mouse";
+    if (activePointer !== null) return;
+    activePointer = e.pointerId ?? "mouse";
     try { btn.setPointerCapture(e.pointerId); } catch {}
     btn.classList.add("pressed");
     onDown();
     e.preventDefault();
   };
   const up = (e) => {
-    if (pointerId === null) return;
-    pointerId = null;
-    btn.classList.remove("pressed");
-    onUp();
-    e.preventDefault();
+    if (activePointer === null) return;
+    // Only release for the same pointer that started the press.
+    if (e.pointerId !== undefined && activePointer !== "mouse" && e.pointerId !== activePointer) return;
+    release();
+    e.preventDefault?.();
   };
   btn.addEventListener("pointerdown", down);
   btn.addEventListener("pointerup", up);
   btn.addEventListener("pointercancel", up);
-  btn.addEventListener("pointerleave", up);
+  // Catch a release that happens off the button (finger slid out, window
+  // blur, scroll-driven cancel, etc). Critical: pointerleave is NOT bound
+  // here — leaving the button's bounding box does NOT release the press.
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+  window.addEventListener("blur", release);
   HOLD_BUTTONS.push({ btn, down, up });
 }
 
